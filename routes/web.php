@@ -1,9 +1,17 @@
 <?php
 
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\ParametresController;
+use App\Http\Controllers\ProfilController;
+use App\Http\Controllers\ReferentielController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SauvegardeController;
 use App\Http\Controllers\SecretariatController;
+use App\Http\Controllers\TypeDocumentController;
+use App\Http\Controllers\UserController;
 use App\Models\Document;
 use App\Models\User;
 use App\Support\ResourceAccess;
@@ -51,6 +59,14 @@ Route::middleware('web')->group(function () {
 Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(function () {
     Route::post('/deconnexion', [AuthController::class, 'deconnexion'])->name('deconnexion');
     Route::get('/tableau-de-bord', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/historique', [AuditLogController::class, 'index'])->name('historique.index');
+
+    // Mon profil — chaque utilisateur connecté modifie son propre compte ici,
+    // voir le docblock de App\Http\Controllers\ProfilController.
+    Route::prefix('profil')->name('profil.')->group(function () {
+        Route::get('/', [ProfilController::class, 'edit'])->name('edit');
+        Route::put('/', [ProfilController::class, 'update'])->name('update');
+    });
 
     Route::prefix('documents')->name('documents.')->group(function () {
         Route::get('/', [DocumentController::class, 'index'])->name('index');
@@ -78,6 +94,83 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
     // paramètre de route optionnel qui touchait Livewire ne s'applique pas
     // à un contrôleur Laravel ordinaire.
     Route::get('/secretariat/{code}/{sousType?}', [SecretariatController::class, 'index'])->name('secretariat');
+
+    // Filières / Niveaux / Années académiques — un seul contrôleur pour les
+    // trois, voir le docblock de App\Http\Controllers\ReferentielController.
+    // Le type de document (champs et sous-référentiel en plus) a son propre
+    // contrôleur dédié, voir plus bas.
+    Route::prefix('referentiels/{referentiel}')->name('referentiels.')->group(function () {
+        Route::get('/', [ReferentielController::class, 'index'])->name('index');
+        Route::get('/creer', [ReferentielController::class, 'create'])->name('create');
+        Route::post('/', [ReferentielController::class, 'store'])->name('store');
+        Route::get('/{id}/modifier', [ReferentielController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [ReferentielController::class, 'update'])->name('update');
+        Route::delete('/{id}', [ReferentielController::class, 'destroy'])->name('destroy');
+        Route::post('/{id}/restaurer', [ReferentielController::class, 'restore'])->name('restore');
+        Route::delete('/{id}/definitivement', [ReferentielController::class, 'forceDestroy'])->name('force-destroy');
+    });
+
+    // Types de documents — contrôleur dédié (champs + sous-types en plus),
+    // voir le docblock de App\Http\Controllers\TypeDocumentController.
+    Route::prefix('types-documents')->name('types-documents.')->group(function () {
+        Route::get('/', [TypeDocumentController::class, 'index'])->name('index');
+        Route::get('/creer', [TypeDocumentController::class, 'create'])->name('create');
+        Route::post('/', [TypeDocumentController::class, 'store'])->name('store');
+        Route::get('/{type}/modifier', [TypeDocumentController::class, 'edit'])->name('edit');
+        Route::put('/{type}', [TypeDocumentController::class, 'update'])->name('update');
+        Route::delete('/{type}', [TypeDocumentController::class, 'destroy'])->name('destroy');
+        // `{id}` non typé sur restaurer/supprimer définitivement, comme pour
+        // les autres référentiels (voir plus haut) : la liaison de route
+        // implicite exclut les enregistrements corbeillés par défaut.
+        Route::post('/{id}/restaurer', [TypeDocumentController::class, 'restore'])->name('restore');
+        Route::delete('/{id}/definitivement', [TypeDocumentController::class, 'forceDestroy'])->name('force-destroy');
+
+        // Sous-types — gérés directement sur la page de modification du type
+        // parent (voir gestion/types-documents/form.blade.php), pas de liste
+        // ni de corbeille propres.
+        Route::prefix('/{type}/sous-types')->name('sous-types.')->group(function () {
+            Route::post('/', [TypeDocumentController::class, 'storeSousType'])->name('store');
+            Route::put('/{sousType}', [TypeDocumentController::class, 'updateSousType'])->name('update');
+            Route::delete('/{sousType}', [TypeDocumentController::class, 'destroySousType'])->name('destroy');
+        });
+    });
+
+    // Réglages de la plateforme — une seule ligne en base, réservée en dur au
+    // rôle admin (voir le docblock de App\Http\Controllers\ParametresController).
+    Route::prefix('parametres')->name('parametres.')->group(function () {
+        Route::get('/', [ParametresController::class, 'index'])->name('index');
+        Route::put('/', [ParametresController::class, 'update'])->name('update');
+    });
+
+    // Sauvegardes — fichiers sur le disque `sauvegardes`, pas de modèle
+    // Eloquent (voir le docblock de App\Http\Controllers\SauvegardeController).
+    Route::prefix('sauvegardes')->name('sauvegardes.')->group(function () {
+        Route::get('/', [SauvegardeController::class, 'index'])->name('index');
+        Route::post('/', [SauvegardeController::class, 'store'])->name('store');
+        Route::delete('/{nom}', [SauvegardeController::class, 'destroy'])->name('destroy');
+    });
+
+    // Rôles & permissions — réservé en dur au rôle admin (voir le docblock de
+    // App\Http\Controllers\RoleController).
+    Route::prefix('roles')->name('roles.')->group(function () {
+        Route::get('/', [RoleController::class, 'index'])->name('index');
+        Route::get('/creer', [RoleController::class, 'create'])->name('create');
+        Route::post('/', [RoleController::class, 'store'])->name('store');
+        Route::get('/{role}/modifier', [RoleController::class, 'edit'])->name('edit');
+        Route::put('/{role}', [RoleController::class, 'update'])->name('update');
+        Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
+    });
+
+    // Utilisateurs — réservé en dur au rôle admin (voir le docblock de
+    // App\Http\Controllers\UserController).
+    Route::prefix('utilisateurs')->name('utilisateurs.')->group(function () {
+        Route::get('/', [UserController::class, 'index'])->name('index');
+        Route::get('/creer', [UserController::class, 'create'])->name('create');
+        Route::post('/', [UserController::class, 'store'])->name('store');
+        Route::get('/{utilisateur}/modifier', [UserController::class, 'edit'])->name('edit');
+        Route::put('/{utilisateur}', [UserController::class, 'update'])->name('update');
+        Route::delete('/{utilisateur}', [UserController::class, 'destroy'])->name('destroy');
+    });
 });
 
 /*

@@ -39,13 +39,21 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Disponible dans toutes les vues Blade de l'espace de gestion
-        // (layouts.gestion / layouts.invite) sous le nom $parametresGlobaux —
-        // Parametre::actuel() se protège déjà lui-même si la table
-        // `parametres` n'existe pas encore (voir son docblock), mais on evite
-        // quand même la requête pour les commandes artisan (migrate, test,
-        // queue:work...), qui ne rendent jamais de vue Blade.
-        if (! $this->app->runningInConsole()) {
-            View::share('parametresGlobaux', Parametre::actuel());
-        }
+        // (layouts.gestion / layouts.invite) sous le nom $parametresGlobaux.
+        //
+        // PAS de `if (! $this->app->runningInConsole())` ici (une version
+        // précédente en avait un, en pensant "les commandes artisan ne
+        // rendent jamais de vue Blade") : c'est faux pour `php artisan
+        // test`, qui reste une commande console de bout en bout tout en
+        // simulant de vraies requêtes HTTP à travers le noyau — donc en
+        // rendant bel et bien des vues. Avec cette garde, TOUTE requête de
+        // test HTTP touchant layouts.gestion échouait avec "Undefined
+        // variable $parametresGlobaux" (5 tests en échec, régression
+        // repérée par le client en exécutant `php artisan test`). Aucun
+        // garde-fou n'est nécessaire ici de toute façon : Parametre::actuel()
+        // se protège déjà lui-même si la table `parametres` n'existe pas
+        // encore (voir son docblock et Parametre::estDisponible()), y
+        // compris pendant `artisan migrate` elle-même.
+        View::share('parametresGlobaux', Parametre::actuel());
     }
 }

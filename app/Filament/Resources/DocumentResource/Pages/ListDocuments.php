@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\DocumentResource\Pages;
 
 use App\Filament\Resources\DocumentResource;
-use App\Support\TypesDiplome;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
@@ -42,8 +41,19 @@ class ListDocuments extends ListRecords
         'SYLLABUS_FILIERES', 'CAHIER_PEDAGOGIQUE', 'BILAN_COURS_LIGNE',
     ];
 
-    /** Attestation, ancien "Diplôme" (désactivé mais des documents peuvent encore y être classés), listes des diplômés. */
-    private const CODES_DIPLOMES_ATTESTATIONS = [...TypesDiplome::CODES, 'LISTE_DIPLOME'];
+    /**
+     * Attestation, ancien "Diplôme" (désactivé mais des documents peuvent
+     * encore y être classés), listes des diplômés.
+     *
+     * Codes en dur (pas App\Support\TypesDiplome::ids(), qui répond à une
+     * question différente — "quels types ont les champs complémentaires
+     * activés depuis l'administration ?" — désormais piloté par la colonne
+     * `champs_diplome_actifs`, voir la migration 2026_09_29_000021_...) :
+     * ce regroupement en onglets est volontairement fixe par famille de
+     * code, comme les quatre autres onglets ci-dessous — voir le docblock
+     * de la classe.
+     */
+    private const CODES_DIPLOMES_ATTESTATIONS = ['DIPLOME', 'ATTESTATION', 'LISTE_DIPLOME'];
 
     /** Instances et dossiers institutionnels : conseils, réunions, extension de filière, cahier des charges. */
     private const CODES_GOUVERNANCE = [

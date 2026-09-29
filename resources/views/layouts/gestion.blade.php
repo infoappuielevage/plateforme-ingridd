@@ -82,6 +82,18 @@
             ]);
         }
     }
+
+    // Référentiels : "Types de documents" a son propre contrôleur/ses propres
+    // routes (voir App\Http\Controllers\TypeDocumentController), les trois
+    // autres partagent App\Http\Controllers\ReferentielController — d'où le
+    // slug de route ("referentiel") parfois différent de la clé
+    // ResourceAccess ("annees-academiques" vs "annees_academiques").
+    $elementsReferentiels = collect([
+        ['cle' => 'types_documents', 'icone' => 'bi-tags-fill', 'label' => 'Types de documents', 'url' => route('gestion.types-documents.index'), 'actif' => request()->routeIs('gestion.types-documents.*')],
+        ['cle' => 'filieres', 'icone' => 'bi-diagram-3-fill', 'label' => 'Filières', 'url' => route('gestion.referentiels.index', ['referentiel' => 'filieres']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'filieres'],
+        ['cle' => 'niveaux', 'icone' => 'bi-bar-chart-steps', 'label' => 'Niveaux', 'url' => route('gestion.referentiels.index', ['referentiel' => 'niveaux']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'niveaux'],
+        ['cle' => 'annees_academiques', 'icone' => 'bi-calendar-range-fill', 'label' => 'Années académiques', 'url' => route('gestion.referentiels.index', ['referentiel' => 'annees-academiques']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'annees-academiques'],
+    ])->filter(fn (array $ref) => \App\Support\ResourceAccess::can($ref['cle'], 'view'));
 @endphp
 
 <div class="app-shell">
@@ -122,39 +134,39 @@
                 @endforeach
             @endif
 
-            <div class="sidebar-group-label">Référentiels</div>
-            @foreach ([
-                ['cle' => 'types_documents', 'icone' => 'bi-tags-fill', 'label' => 'Types de documents'],
-                ['cle' => 'filieres', 'icone' => 'bi-diagram-3-fill', 'label' => 'Filières'],
-                ['cle' => 'niveaux', 'icone' => 'bi-bar-chart-steps', 'label' => 'Niveaux'],
-                ['cle' => 'annees_academiques', 'icone' => 'bi-calendar-range-fill', 'label' => 'Années académiques'],
-            ] as $ref)
-                @if (\App\Support\ResourceAccess::can($ref['cle'], 'view'))
-                    <a href="#" class="sidebar-link disabled" title="{{ $ref['label'] }}">
+            @if ($elementsReferentiels->isNotEmpty())
+                <div class="sidebar-group-label">Référentiels</div>
+                @foreach ($elementsReferentiels as $ref)
+                    <a href="{{ $ref['url'] }}" class="sidebar-link {{ $ref['actif'] ? 'active' : '' }}" title="{{ $ref['label'] }}">
                         <i class="bi {{ $ref['icone'] }}"></i><span class="sidebar-label">{{ $ref['label'] }}</span>
-                        <span class="badge bg-secondary ms-auto" style="font-size:.6rem;">bientôt</span>
+                    </a>
+                @endforeach
+            @endif
+
+            {{-- Historique passe par ResourceAccess (un rôle non-admin peut s'en voir accorder la lecture) ; les trois autres restent réservés en dur à l'admin — voir chaque contrôleur. --}}
+            @if ($utilisateurConnecte->role === \App\Models\User::ROLE_ADMIN || \App\Support\ResourceAccess::can('audit_logs', 'view'))
+                <div class="sidebar-group-label">Administration</div>
+
+                @if (\App\Support\ResourceAccess::can('audit_logs', 'view'))
+                    <a href="{{ route('gestion.historique.index') }}" class="sidebar-link {{ request()->routeIs('gestion.historique.*') ? 'active' : '' }}" title="Historique">
+                        <i class="bi bi-journal-text"></i><span class="sidebar-label">Historique</span>
                     </a>
                 @endif
-            @endforeach
 
-            @if ($utilisateurConnecte->role === \App\Models\User::ROLE_ADMIN)
-                <div class="sidebar-group-label">Administration</div>
-                <a href="#" class="sidebar-link disabled" title="Rôles et permissions">
-                    <i class="bi bi-person-badge-fill"></i><span class="sidebar-label">Rôles &amp; permissions</span>
-                    <span class="badge bg-secondary ms-auto" style="font-size:.6rem;">bientôt</span>
-                </a>
-                <a href="#" class="sidebar-link disabled" title="Historique">
-                    <i class="bi bi-journal-text"></i><span class="sidebar-label">Historique</span>
-                    <span class="badge bg-secondary ms-auto" style="font-size:.6rem;">bientôt</span>
-                </a>
-                <a href="#" class="sidebar-link disabled" title="Sauvegardes">
-                    <i class="bi bi-cloud-arrow-up-fill"></i><span class="sidebar-label">Sauvegardes</span>
-                    <span class="badge bg-secondary ms-auto" style="font-size:.6rem;">bientôt</span>
-                </a>
-                <a href="#" class="sidebar-link disabled" title="Paramètres">
-                    <i class="bi bi-gear-fill"></i><span class="sidebar-label">Paramètres</span>
-                    <span class="badge bg-secondary ms-auto" style="font-size:.6rem;">bientôt</span>
-                </a>
+                @if ($utilisateurConnecte->role === \App\Models\User::ROLE_ADMIN)
+                    <a href="{{ route('gestion.roles.index') }}" class="sidebar-link {{ request()->routeIs('gestion.roles.*') ? 'active' : '' }}" title="Rôles et permissions">
+                        <i class="bi bi-person-badge-fill"></i><span class="sidebar-label">Rôles &amp; permissions</span>
+                    </a>
+                    <a href="{{ route('gestion.utilisateurs.index') }}" class="sidebar-link {{ request()->routeIs('gestion.utilisateurs.*') ? 'active' : '' }}" title="Utilisateurs">
+                        <i class="bi bi-people-fill"></i><span class="sidebar-label">Utilisateurs</span>
+                    </a>
+                    <a href="{{ route('gestion.sauvegardes.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sauvegardes.*') ? 'active' : '' }}" title="Sauvegardes">
+                        <i class="bi bi-cloud-arrow-up-fill"></i><span class="sidebar-label">Sauvegardes</span>
+                    </a>
+                    <a href="{{ route('gestion.parametres.index') }}" class="sidebar-link {{ request()->routeIs('gestion.parametres.*') ? 'active' : '' }}" title="Paramètres">
+                        <i class="bi bi-gear-fill"></i><span class="sidebar-label">Paramètres</span>
+                    </a>
+                @endif
             @endif
         </nav>
 
@@ -199,6 +211,8 @@
                     </button>
                     <div class="dropdown-menu dropdown-menu-end shadow-sm">
                         <span class="dropdown-item-text small text-muted">{{ \App\Models\User::libellesRoles()[$utilisateurConnecte->role] ?? $utilisateurConnecte->role }}</span>
+                        <div class="dropdown-divider"></div>
+                        <a href="{{ route('gestion.profil.edit') }}" class="dropdown-item"><i class="bi bi-person-circle me-2"></i>Mon profil</a>
                         <div class="dropdown-divider"></div>
                         <form action="{{ route('gestion.deconnexion') }}" method="POST">
                             @csrf
