@@ -32,6 +32,14 @@ class SousTypeDocumentSeederTest extends TestCase
 
         $bordereau = TypeDocument::query()->where('code', 'BORDEREAU')->firstOrFail();
         $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $bordereau->id, 'libelle' => 'CNSS']);
+
+        // RELEVE_NOTES et PV_DELIBERATION ont chacun leurs propres
+        // sous-types "Licence"/"Master" — deux types distincts, aucun lien
+        // entre les deux (voir le docblock de la classe).
+        $releveNotes = TypeDocument::query()->where('code', 'RELEVE_NOTES')->firstOrFail();
+        $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $releveNotes->id, 'libelle' => 'Licence']);
+        $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $releveNotes->id, 'libelle' => 'Master']);
+        $this->assertSame(2, SousTypeDocument::query()->where('type_document_id', $releveNotes->id)->count());
     }
 
     /** Le référentiel des types n'a pas été seedé : aucun sous-type ne doit être créé, sans erreur. */

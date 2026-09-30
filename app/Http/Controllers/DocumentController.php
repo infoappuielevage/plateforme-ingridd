@@ -9,9 +9,11 @@ use App\Models\Niveau;
 use App\Models\Parametre;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
+use App\Support\FamillesDocument;
 use App\Support\ResourceAccess;
 use App\Support\Semestres;
 use App\Support\TypesDiplome;
+use App\Support\TypesEcranDedie;
 use App\Support\TypesFichiers;
 use App\Support\TypesPvSoutenance;
 use Illuminate\Contracts\View\View;
@@ -49,10 +51,17 @@ class DocumentController extends Controller
     public function index(Request $request): View
     {
         $corbeille = $request->boolean('corbeille');
+        // Onglet "famille" au-dessus de la liste (voir App\Support\FamillesDocument)
+        // — remplace ListDocuments::getTabs() (Filament, retiré). Un onglet
+        // inconnu dans l'URL retombe silencieusement sur "tous".
+        $onglet = FamillesDocument::ongletValide($request->string('onglet', 'tous')->toString());
 
         $requete = Document::query()
             ->with(['typeDocument', 'sousTypeDocument', 'filiere', 'niveau', 'anneeAcademique', 'uploadePar'])
             ->when($corbeille, fn ($q) => $q->onlyTrashed())
+            ->when(FamillesDocument::codesPour($onglet), function ($q, array $codes) {
+                $q->whereHas('typeDocument', fn ($q2) => $q2->whereIn('code', $codes));
+            })
             ->when($request->filled('type_document_id'), fn ($q) => $q->where('type_document_id', $request->integer('type_document_id')))
             ->when($request->filled('sous_type_document_id'), fn ($q) => $q->where('sous_type_document_id', $request->integer('sous_type_document_id')))
             ->when($request->filled('filiere_id'), fn ($q) => $q->where('filiere_id', $request->integer('filiere_id')))
@@ -76,6 +85,12 @@ class DocumentController extends Controller
         return view('gestion.documents.index', [
             'documents' => $documents,
             'corbeille' => $corbeille,
+            // Ignore les filtres actifs (onglet, recherche...) — "Vider la
+            // corbeille" agit toujours sur TOUS les documents corbeillés,
+            // jamais seulement ceux affichés à l'écran (voir viderCorbeille()).
+            'corbeillePeutEtreVidee' => $corbeille && Document::onlyTrashed()->exists(),
+            'onglet' => $onglet,
+            'onglets' => FamillesDocument::onglets(),
             'types' => TypeDocument::query()->orderBy('ordre')->get(),
             'filieres' => Filiere::query()->orderBy('ordre')->get(),
             'niveaux' => Niveau::query()->orderBy('ordre')->get(),
@@ -194,6 +209,72 @@ class DocumentController extends Controller
         return back()->with('succes', 'Document mis à la corbeille.');
     }
 
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les documents
+     * corbeillés en un clic, sans avoir à les sélectionner un par un — sur
+     * demande du client, en plus de la suppression définitive individuelle
+     * déjà possible (voir forceDestroy()). Remplace
+     * App\Filament\Resources\CorbeilleResource\Pages\ListCorbeille::getHeaderActions()
+     * (Filament, retiré).
+     *
+     * Passe par chaque document individuellement (plutôt qu'un
+     * Document::onlyTrashed()->forceDelete() en une seule requête SQL) :
+     * c'est Document::booted() (static::deleting) qui efface le fichier
+     * physique de chacun, et l'historique (voir AuditLog) qui journalise
+     * chaque suppression — les deux exigent que l'événement Eloquent
+     * "deleting"/"deleted" se déclenche pour chaque modèle, ce qu'une
+     * suppression de masse en une seule requête ne ferait pas.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+
+        $documents = Document::onlyTrashed()->get();
+
+        foreach ($documents as $document) {
+            $document->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.documents.index', ['corbeille' => 1])
+            ->with('succes', $documents->count().' document(s) supprimé(s) définitivement.');
+    }
+
+    /**
+     * Mise à la corbeille groupée : sélection multiple de documents (cases à
+     * cocher, voir resources/views/gestion/documents/index.blade.php) mis à
+     * la corbeille en une seule action, plutôt qu'un par un — sur demande
+     * explicite du client. Remplace
+     * App\Filament\Resources\DocumentResource\Pages\ListDocuments
+     * (DeleteBulkAction, Filament, retiré).
+     *
+     * `Document::query()` (pas onlyTrashed()) : un id déjà corbeillé glissé
+     * dans la sélection est ignoré plutôt que traité une seconde fois — le
+     * scope global SoftDeletes l'exclut de lui-même.
+     *
+     * Comme viderCorbeille() : chaque document est traité individuellement
+     * (jamais une seule requête SQL groupée), pour que Document::booted()
+     * (fichier physique) et l'historique (AuditLog) se déclenchent bien pour
+     * chacun.
+     */
+    public function mettreCorbeilleGroupee(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'documents' => ['required', 'array', 'min:1'],
+            'documents.*' => ['integer'],
+        ]);
+
+        $documents = Document::query()->whereIn('id', $donnees['documents'])->get();
+
+        foreach ($documents as $document) {
+            $document->delete();
+        }
+
+        return back()->with('succes', $documents->count().' document(s) mis à la corbeille.');
+    }
+
     public function restore(int $document): RedirectResponse
     {
         abort_unless(ResourceAccess::can('documents', 'delete'), 403);
@@ -203,6 +284,25 @@ class DocumentController extends Controller
         return back()->with('succes', 'Document restauré.');
     }
 
+    /** Restauration groupée — pendant de mettreCorbeilleGroupee() pour la corbeille. */
+    public function restaurerGroupe(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'documents' => ['required', 'array', 'min:1'],
+            'documents.*' => ['integer'],
+        ]);
+
+        $documents = Document::onlyTrashed()->whereIn('id', $donnees['documents'])->get();
+
+        foreach ($documents as $document) {
+            $document->restore();
+        }
+
+        return back()->with('succes', $documents->count().' document(s) restauré(s).');
+    }
+
     public function forceDestroy(int $document): RedirectResponse
     {
         abort_unless(ResourceAccess::can('documents', 'delete'), 403);
@@ -210,6 +310,29 @@ class DocumentController extends Controller
         Document::onlyTrashed()->findOrFail($document)->forceDelete();
 
         return back()->with('succes', 'Document supprimé définitivement.');
+    }
+
+    /**
+     * Suppression définitive groupée — pendant de forceDestroy() pour une
+     * sélection multiple, sans avoir à vider TOUTE la corbeille (voir
+     * viderCorbeille()) quand seule une partie doit disparaître.
+     */
+    public function forceDestroyGroupe(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'documents' => ['required', 'array', 'min:1'],
+            'documents.*' => ['integer'],
+        ]);
+
+        $documents = Document::onlyTrashed()->whereIn('id', $donnees['documents'])->get();
+
+        foreach ($documents as $document) {
+            $document->forceDelete();
+        }
+
+        return back()->with('succes', $documents->count().' document(s) supprimé(s) définitivement.');
     }
 
     /**
@@ -249,6 +372,14 @@ class DocumentController extends Controller
         // choisi sur ce document (ex. "Diplôme", désactivé depuis) reste
         // visible dans la liste au lieu de disparaître silencieusement du
         // formulaire.
+        //
+        // Même chose, à la création SEULEMENT, pour les trois types qui ont
+        // désormais leur propre écran dédié (voir App\Support\
+        // TypesEcranDedie) : on ne les propose plus ici, pour éviter de
+        // créer un document orphelin en passant à côté de PvSoutenance/
+        // SessionDeliberation/SessionReleve. En modification, un document
+        // déjà classé ainsi (déposé avant ce changement, ou via le Secrétariat
+        // à l'époque) garde son type visible, comme pour un type désactivé.
         $typesQuery = TypeDocument::query()->orderBy('ordre');
         $sousTypesQuery = SousTypeDocument::query()->orderBy('ordre');
         $filieresQuery = Filiere::query()->orderBy('ordre');
@@ -256,7 +387,7 @@ class DocumentController extends Controller
         $anneesQuery = AnneeAcademique::query()->orderByDesc('libelle');
 
         if (! $document->exists) {
-            $typesQuery->where('actif', true);
+            $typesQuery->where('actif', true)->whereNotIn('id', TypesEcranDedie::ids());
             $sousTypesQuery->where('actif', true);
             $filieresQuery->where('actif', true);
             $niveauxQuery->where('actif', true);
@@ -304,14 +435,46 @@ class DocumentController extends Controller
         $tailleMaxKo = $parametres->taille_max_document_mo * 1024;
         $mimesAutorises = TypesFichiers::mimesPour($parametres->types_fichiers_autorises);
 
+        // "Titulaire" est obligatoire pour un diplôme/attestation ou un PV de
+        // soutenance (demande explicite du client, voir les deux référentiels
+        // App\Support\TypesDiplome/TypesPvSoutenance) — absent des règles
+        // ci-dessous, le champ ne serait jamais réellement exigé côté serveur
+        // (le formulaire, lui, le marque déjà requis en JS selon le type
+        // choisi, mais voir le docblock de la classe : un serveur ne doit
+        // jamais faire confiance à ce que le JavaScript a validé).
+        $typeId = (int) $request->input('type_document_id');
+        $titulaireExige = in_array($typeId, TypesDiplome::ids(), true)
+            || in_array($typeId, TypesPvSoutenance::ids(), true);
+
         return $request->validate([
-            'type_document_id' => ['required', Rule::exists('type_documents', 'id')],
-            'sous_type_document_id' => ['nullable', Rule::exists('sous_types_documents', 'id')],
+            // Rule::notIn(...) uniquement à la création : un formulaire
+            // trafiqué (le <select> ne propose déjà plus ces types-là, voir
+            // donneesFormulaire()) ne doit pas pouvoir créer de document
+            // orphelin pour un type à écran dédié. En modification, on ne
+            // bloque rien : un document déjà classé ainsi doit rester
+            // modifiable normalement (voir App\Support\TypesEcranDedie).
+            'type_document_id' => [
+                'required',
+                Rule::exists('type_documents', 'id'),
+                Rule::when($creation, Rule::notIn(TypesEcranDedie::ids())),
+            ],
+            // ->where(...) : un sous-type doit appartenir au type soumis, pas
+            // seulement exister quelque part — le formulaire (JS) ne propose
+            // déjà que les sous-types du type choisi, mais un serveur ne doit
+            // jamais faire confiance à ce que le JavaScript a montré/caché
+            // (voir le docblock de la classe) ; sans ce ->where(), un
+            // sous-type d'un AUTRE type resterait accepté si forcé dans la
+            // requête.
+            'sous_type_document_id' => [
+                'nullable',
+                Rule::exists('sous_types_documents', 'id')
+                    ->where(fn ($q) => $q->where('type_document_id', $request->input('type_document_id'))),
+            ],
             'filiere_id' => ['nullable', Rule::exists('filieres', 'id')],
             'niveau_id' => ['nullable', Rule::exists('niveaux', 'id')],
             'annee_academique_id' => ['nullable', Rule::exists('annees_academiques', 'id')],
             'semestre' => ['nullable', 'integer', 'min:1', 'max:10'],
-            'nom_titulaire' => ['nullable', 'string', 'max:255'],
+            'nom_titulaire' => [$titulaireExige ? 'required' : 'nullable', 'string', 'max:255'],
             'numero_diplome' => ['nullable', 'string', 'max:100'],
             'date_delivrance' => ['nullable', 'date'],
             'theme_memoire' => ['nullable', 'string', 'max:255'],
@@ -327,6 +490,8 @@ class DocumentController extends Controller
                 'max:'.$tailleMaxKo,
                 Rule::when(! empty($mimesAutorises), ['mimetypes:'.implode(',', $mimesAutorises)]),
             ],
+        ], [
+            'type_document_id.not_in' => 'Ce type de document a désormais son propre écran dédié (PV de soutenance, PV de délibération ou Relevés de notes) — utilisez-le plutôt que ce formulaire général.',
         ]);
     }
 }

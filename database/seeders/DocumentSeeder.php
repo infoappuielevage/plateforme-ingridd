@@ -6,6 +6,12 @@ use App\Models\AnneeAcademique;
 use App\Models\Document;
 use App\Models\Filiere;
 use App\Models\Niveau;
+use App\Models\PvSoutenance;
+use App\Models\PvSoutenanceFichier;
+use App\Models\SessionDeliberation;
+use App\Models\SessionDeliberationFichier;
+use App\Models\SessionReleve;
+use App\Models\SessionReleveFichier;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
 use App\Models\User;
@@ -42,6 +48,15 @@ use Illuminate\Support\Str;
  * plus simple de tous les retrouver plus tard (recherche globale du panneau
  * d'administration, ou Documents > filtre + recherche "démonstration") pour
  * les supprimer d'un coup avant une mise en production réelle.
+ *
+ * Mis à jour avec l'arrivée des écrans dédiés PV de soutenance/PV de
+ * délibération/Relevés de notes (voir App\Models\PvSoutenance,
+ * SessionDeliberation, SessionReleve) : ces trois types ne sont plus
+ * illustrés par de simples Document "à plat" (l'ancien comportement, hérité
+ * d'avant la refonte) mais par de VRAIS enregistrements dédiés, avec leurs
+ * "cases" (voir PvSoutenanceFichier/SessionDeliberationFichier/
+ * SessionReleveFichier) — sans quoi ces données de démonstration
+ * n'apparaîtraient tout simplement pas sur les nouveaux écrans dédiés.
  */
 class DocumentSeeder extends Seeder
 {
@@ -69,28 +84,40 @@ class DocumentSeeder extends Seeder
         }
 
         $anneeRecente = $anneesAcademiques->first();
-        $typeListeEtudiants = TypeDocument::query()->where('code', 'LISTE_ETUDIANTS')->where('actif', true)->first();
-        $typePvDeliberation = TypeDocument::query()->where('code', 'PV_DELIBERATION')->where('actif', true)->first();
-        $typeReleveNotes = TypeDocument::query()->where('code', 'RELEVE_NOTES')->where('actif', true)->first();
-        $typeAttestation = TypeDocument::query()->where('code', 'ATTESTATION')->where('actif', true)->first();
-        $typePvSoutenance = TypeDocument::query()->where('code', 'PV_SOUTENANCE')->where('actif', true)->first();
+        // SANS filtre `actif` (contrairement à avant le "menu allégé" — voir
+        // TypeDocumentSeeder/la migration 2026_10_06_000001_...) : la plupart
+        // des types ci-dessous (dont ATTESTATION) sont désormais désactivés
+        // par défaut sur une base neuve, mais ça ne concerne que l'offre de
+        // création d'un NOUVEAU document (voir DocumentController) — rien
+        // n'empêche un type désactivé d'avoir déjà des documents classés
+        // dedans (déposés avant sa désactivation, ou reclassés). Un document
+        // de démonstration pour un type désactivé illustre d'ailleurs
+        // exactement ce cas — même raisonnement déjà appliqué plus bas à
+        // $typesRetires (section 5).
+        $typeListeEtudiants = TypeDocument::query()->where('code', 'LISTE_ETUDIANTS')->first();
+        $typePvDeliberation = TypeDocument::query()->where('code', 'PV_DELIBERATION')->first();
+        $typeReleveNotes = TypeDocument::query()->where('code', 'RELEVE_NOTES')->first();
+        $typeAttestation = TypeDocument::query()->where('code', 'ATTESTATION')->first();
+        $typePvSoutenance = TypeDocument::query()->where('code', 'PV_SOUTENANCE')->first();
         // Liste mise à jour après la refonte complète du référentiel des
         // types (voir TypeDocumentSeeder) : couvre tous les types
         // administratifs génériques restants (sans champs dédiés, sans
         // filière/niveau), pour que chaque page dédiée du menu "Secrétariat"
-        // ait au moins quelques documents à montrer.
+        // ait au moins quelques documents à montrer — SANS filtre `actif`,
+        // pour la même raison que ci-dessus (la quasi-totalité de cette
+        // liste est désactivée par défaut depuis le "menu allégé").
         $typesGeneriques = TypeDocument::query()->whereIn('code', [
             'CONTRAT', 'COURRIER', 'CAHIER_PEDAGOGIQUE', 'CAHIER_CHARGE_MINISTERE',
             'DOSSIER_EXTENSION_FILIERE', 'CONSEIL_ETABLISSEMENT', 'CONSEIL_SCIENTIFIQUE',
             'CANDIDAT_BTS', 'NOTICE_RENSEIGNEMENT', 'ORDRE_MISSION', 'NOTE_INFORMATION',
             'ORGANIGRAMME', 'SPOT_TELE_RADIO', 'SYLLABUS_FILIERES', 'UNUPEL',
             'LISTE_PERSONNEL', 'LISTE_DIPLOME', 'PV_REUNION', 'CANEVAS_RAPPORT_RENTREE', 'AUTRE',
-        ])->where('actif', true)->get();
+        ])->get();
 
         // Sous-types actifs, regroupés par code du type parent (voir
         // App\Models\SousTypeDocument) — calculé une seule fois, réutilisé
-        // par les sections 1, 3 et 3ter ci-dessous pour illustrer le champ
-        // "Sous-type" sur quelques documents de démonstration.
+        // par les sections 1bis, 2, 3 et 3ter ci-dessous pour illustrer le
+        // champ "Sous-type" sur quelques documents de démonstration.
         $sousTypesParType = SousTypeDocument::query()
             ->where('actif', true)
             ->with('typeDocument:id,code')
@@ -102,11 +129,17 @@ class DocumentSeeder extends Seeder
             ->get($codeType, collect())
             ->firstWhere('libelle', $libelle)?->id;
 
+        $niveauPourNumeroSemestre = fn (int $numero) => $niveaux->firstWhere('code', Semestres::codeNiveauPourSemestre($numero));
+
         $documentsCrees = [];
+        $pvSoutenancesCreees = [];
+        $sessionsDeliberationCreees = [];
+        $sessionsReleveCreees = [];
 
         // --------------------------------------------------------------
-        // 1) Un document par filière/niveau (année académique la plus
-        // récente) : liste des étudiants et PV de délibération.
+        // 1) Un document "Liste des étudiants" par filière/niveau (année
+        // académique la plus récente). Le PV de délibération, lui, a
+        // désormais son propre écran dédié — voir section 1bis ci-dessous.
         // --------------------------------------------------------------
         foreach ($filieres as $filiere) {
             foreach ($niveaux as $niveau) {
@@ -123,52 +156,132 @@ class DocumentSeeder extends Seeder
                         extension: 'xlsx',
                     );
                 }
+            }
+        }
 
-                if ($typePvDeliberation) {
-                    // Sous-type "Licence"/"Master" selon le niveau concerné
-                    // (voir SousTypeDocumentSeeder) — dégradé silencieusement
-                    // à null si le référentiel des sous-types n'a pas encore
-                    // été seedé, ou si le niveau n'est ni L* ni M*.
-                    $sousTypeDeliberation = str_starts_with($niveau->code, 'M')
-                        ? $sousTypeParLibelle('PV_DELIBERATION', 'Master')
-                        : $sousTypeParLibelle('PV_DELIBERATION', 'Licence');
+        // --------------------------------------------------------------
+        // 1bis) Sessions de délibération : une par filière et par cycle
+        // (Licence/Master — pas Doctorat, pour ne pas générer un nombre
+        // excessif de documents), pour la session la plus récente. Voir
+        // App\Models\SessionDeliberation : contrairement à un simple
+        // Document, UNE session couvre tout un cycle (ex. "Licence" = L1 à
+        // L3), pas un seul niveau — d'où un enregistrement par filière x
+        // cycle plutôt que par filière x niveau comme avant la refonte.
+        //
+        // Les "cases" sont recréées ici à l'identique de
+        // SessionDeliberationController::creerCasesVides() (deux notes
+        // d'information + une case par semestre/année de thèse), puis
+        // seules les 3 premières sont remplies d'un document — une session
+        // récemment créée, en cours de constitution, est plus représentative
+        // qu'une session déjà entièrement complète.
+        // --------------------------------------------------------------
+        if ($typePvDeliberation) {
+            foreach ($filieres as $filiere) {
+                foreach ([SessionDeliberation::CYCLE_LICENCE, SessionDeliberation::CYCLE_MASTER] as $cycle) {
+                    $session = SessionDeliberation::create([
+                        'annee_academique_id' => $anneeRecente->id,
+                        'session' => SessionDeliberation::SESSION_PREMIERE,
+                        'cycle' => $cycle,
+                        'filiere_id' => $filiere->id,
+                        'created_by' => $admin->id,
+                    ]);
+                    $sessionsDeliberationCreees[] = $session;
 
-                    $documentsCrees[] = $this->creerDocument(
-                        $admin,
-                        "Délibération - {$filiere->code} {$niveau->code} ({$anneeRecente->libelle})",
-                        [
-                            'type_document_id' => $typePvDeliberation->id,
-                            'sous_type_document_id' => $sousTypeDeliberation,
-                            'filiere_id' => $filiere->id,
-                            'niveau_id' => $niveau->id,
-                            'annee_academique_id' => $anneeRecente->id,
-                        ],
-                    );
+                    $cases = [];
+                    foreach (array_keys(SessionDeliberationFichier::ROLES_NOTES) as $role) {
+                        $cases[] = SessionDeliberationFichier::create([
+                            'session_deliberation_id' => $session->id,
+                            'role' => $role,
+                            'numero' => null,
+                            'document_id' => null,
+                        ]);
+                    }
+
+                    $roleNumerote = $session->roleNumerote();
+                    foreach ($session->numerosAttendus() as $numero) {
+                        $cases[] = SessionDeliberationFichier::create([
+                            'session_deliberation_id' => $session->id,
+                            'role' => $roleNumerote,
+                            'numero' => $numero,
+                            'document_id' => null,
+                        ]);
+                    }
+
+                    $sousType = $sousTypeParLibelle('PV_DELIBERATION', $cycle === SessionDeliberation::CYCLE_MASTER ? 'Master' : 'Licence');
+
+                    foreach (array_slice($cases, 0, 3) as $case) {
+                        $document = $this->creerDocument(
+                            $admin,
+                            "Délibération {$session->cycleLibelle()} {$session->sessionLibelle()} - {$filiere->code} - {$case->libelle()}",
+                            [
+                                'type_document_id' => $typePvDeliberation->id,
+                                'sous_type_document_id' => $sousType,
+                                'filiere_id' => $filiere->id,
+                                'niveau_id' => $case->role === $roleNumerote ? $niveauPourNumeroSemestre($case->numero)?->id : null,
+                                'annee_academique_id' => $anneeRecente->id,
+                                'semestre' => $case->role === SessionDeliberationFichier::ROLE_SEMESTRE ? $case->numero : null,
+                            ],
+                        );
+                        $case->update(['document_id' => $document->id]);
+                        $documentsCrees[] = $document;
+                    }
                 }
             }
         }
 
         // --------------------------------------------------------------
-        // 2) Relevés de notes : sur deux filières seulement (pas toutes,
-        // pour ne pas générer un nombre excessif de documents), un par
-        // semestre réellement possible pour chaque niveau — voir
-        // App\Support\Semestres.
+        // 2) Sessions de relevés de notes : sur deux filières seulement
+        // (pas toutes, pour ne pas générer un nombre excessif de
+        // documents), une session par cycle (Licence/Master) pour la
+        // session la plus récente — voir App\Models\SessionReleve, miroir
+        // de SessionDeliberation ci-dessus mais sans les deux cases "Note
+        // d'information" (voir SessionReleveFichier). Environ la moitié des
+        // cases numérotées est déjà remplie d'un document.
         // --------------------------------------------------------------
         if ($typeReleveNotes) {
             foreach ($filieres->take(2) as $filiere) {
-                foreach ($niveaux as $niveau) {
-                    foreach (Semestres::pourCodeNiveau($niveau->code) as $semestre) {
-                        $documentsCrees[] = $this->creerDocument(
+                foreach ([SessionReleve::CYCLE_LICENCE, SessionReleve::CYCLE_MASTER] as $cycle) {
+                    $session = SessionReleve::create([
+                        'annee_academique_id' => $anneeRecente->id,
+                        'session' => SessionReleve::SESSION_PREMIERE,
+                        'cycle' => $cycle,
+                        'filiere_id' => $filiere->id,
+                        'created_by' => $admin->id,
+                    ]);
+                    $sessionsReleveCreees[] = $session;
+
+                    $roleNumerote = $session->roleNumerote();
+                    $cases = [];
+                    foreach ($session->numerosAttendus() as $numero) {
+                        $cases[] = SessionReleveFichier::create([
+                            'session_releve_id' => $session->id,
+                            'role' => $roleNumerote,
+                            'numero' => $numero,
+                            'document_id' => null,
+                        ]);
+                    }
+
+                    $sousType = $sousTypeParLibelle('RELEVE_NOTES', $cycle === SessionReleve::CYCLE_MASTER ? 'Master' : 'Licence');
+
+                    foreach ($cases as $index => $case) {
+                        if ($index % 2 !== 0) {
+                            continue;
+                        }
+
+                        $document = $this->creerDocument(
                             $admin,
-                            "Relevé de notes - {$filiere->code} {$niveau->code} Semestre {$semestre} ({$anneeRecente->libelle})",
+                            "Relevé de notes {$session->cycleLibelle()} - {$filiere->code} - {$case->libelle()}",
                             [
                                 'type_document_id' => $typeReleveNotes->id,
+                                'sous_type_document_id' => $sousType,
                                 'filiere_id' => $filiere->id,
-                                'niveau_id' => $niveau->id,
+                                'niveau_id' => $niveauPourNumeroSemestre($case->numero)?->id,
                                 'annee_academique_id' => $anneeRecente->id,
-                                'semestre' => $semestre,
+                                'semestre' => $case->role === SessionReleveFichier::ROLE_SEMESTRE ? $case->numero : null,
                             ],
                         );
+                        $case->update(['document_id' => $document->id]);
+                        $documentsCrees[] = $document;
                     }
                 }
             }
@@ -226,10 +339,13 @@ class DocumentSeeder extends Seeder
         }
 
         // --------------------------------------------------------------
-        // 3bis) PV de soutenance : numérisation du registre papier, avec
-        // thème du mémoire, date de soutenance et membres du jury — pour
-        // que ce type ait, lui aussi, des exemples dans les listes/
-        // statistiques dès la première installation.
+        // 3bis) PV de soutenance : un enregistrement par étudiant — voir
+        // App\Models\PvSoutenance (remplace l'ancien Document "à plat" par
+        // la vraie structure dédiée, avec ses deux cases fixes "Diplôme"/
+        // "Image du registre", recréées ici à l'identique de
+        // PvSoutenanceController::creerCasesVides()). Numéros d'ordre de
+        // registre et de PV générés séquentiellement (uniques, comme
+        // l'exige PvSoutenanceController::valider()).
         // --------------------------------------------------------------
         if ($typePvSoutenance) {
             $themesMemoire = [
@@ -238,28 +354,90 @@ class DocumentSeeder extends Seeder
                 'Gestion des ressources humaines dans le secteur informel',
                 'Contribution des technologies mobiles à l\'inclusion financière',
             ];
-            $juryExemples = [
-                "Pr. OUEDRAOGO Jean (Président)\nDr. KABORE Aïcha (Rapporteur)\nM. SAWADOGO Paul (Membre)",
-                "Dr. TRAORE Fatou (Présidente)\nPr. ZONGO Marc (Rapporteur)\nMme COMPAORE Rita (Membre)",
+            $lieuxNaissance = ['Ouagadougou', 'Bobo-Dioulasso', 'Koudougou', 'Ouahigouya', 'Banfora'];
+            $jurys = [
+                ['president' => 'Pr. OUEDRAOGO Jean', 'directeur' => 'Dr. KABORE Aïcha', 'rapporteur' => 'M. SAWADOGO Paul'],
+                ['president' => 'Dr. TRAORE Fatou', 'directeur' => 'Pr. ZONGO Marc', 'rapporteur' => 'Mme COMPAORE Rita'],
             ];
-            $niveauSoutenance = $niveaux->firstWhere('code', 'M2') ?? $niveaux->last();
 
-            foreach ($etudiants as $index => $nomTitulaire) {
-                $documentsCrees[] = $this->creerDocument(
+            foreach ($etudiants as $index => $nomComplet) {
+                [$nom, $prenoms] = array_pad(explode(' ', $nomComplet, 2), 2, '');
+                $jury = $jurys[$index % count($jurys)];
+                // Environ deux tiers déjà retirés (même répartition que les
+                // attestations ci-dessus), le reste encore en attente.
+                $estRetire = $index % 3 !== 0;
+
+                $pvSoutenance = PvSoutenance::create([
+                    'niveau' => PvSoutenance::NIVEAU_MASTER,
+                    'date_soutenance' => now()->subMonths(random_int(1, 8))->toDateString(),
+                    'numero_ordre_registre' => sprintf('REG-%04d', $index + 1),
+                    'nom' => $nom,
+                    'prenoms' => $prenoms,
+                    'date_naissance' => now()->subYears(random_int(22, 27))->subDays(random_int(0, 365))->toDateString(),
+                    'lieu_naissance' => $lieuxNaissance[$index % count($lieuxNaissance)],
+                    'numero_pv' => sprintf('PV-%04d', $index + 1),
+                    'filiere_id' => $filieres->random()->id,
+                    'theme' => $themesMemoire[$index % count($themesMemoire)],
+                    'decision_jury' => PvSoutenance::DECISION_ADMIS,
+                    'moyenne' => random_int(100, 180) / 10,
+                    'mention' => $mentions[array_rand($mentions)],
+                    'president_jury' => $jury['president'],
+                    'directeur_memoire' => $jury['directeur'],
+                    'rapporteur' => $jury['rapporteur'],
+                    'maitre_stage' => null,
+                    'created_by' => $admin->id,
+                ]);
+                $pvSoutenancesCreees[] = $pvSoutenance;
+
+                $casesParRole = [];
+                foreach (array_keys(PvSoutenanceFichier::ROLES_FIXES) as $role) {
+                    $casesParRole[$role] = PvSoutenanceFichier::create([
+                        'pv_soutenance_id' => $pvSoutenance->id,
+                        'role' => $role,
+                        'document_id' => null,
+                    ]);
+                }
+
+                // Image du registre : toujours déposée (la numérisation est
+                // faite en même temps que la saisie du PV).
+                $documentRegistre = $this->creerDocument(
                     $admin,
-                    "PV de soutenance - {$nomTitulaire}",
+                    "PV de soutenance - {$pvSoutenance->nomComplet()} - Image du registre",
                     [
                         'type_document_id' => $typePvSoutenance->id,
-                        'filiere_id' => $filieres->random()->id,
-                        'niveau_id' => $niveauSoutenance->id,
-                        'annee_academique_id' => $anneeRecente->id,
-                        'nom_titulaire' => $nomTitulaire,
-                        'theme_memoire' => $themesMemoire[$index % count($themesMemoire)],
-                        'date_soutenance' => now()->subMonths(random_int(1, 8))->toDateString(),
-                        'membres_jury' => $juryExemples[$index % count($juryExemples)],
-                        'mention' => $mentions[array_rand($mentions)],
+                        'filiere_id' => $pvSoutenance->filiere_id,
+                        'theme_memoire' => $pvSoutenance->theme,
+                        'date_soutenance' => $pvSoutenance->date_soutenance,
                     ],
                 );
+                $casesParRole[PvSoutenanceFichier::ROLE_IMAGE_REGISTRE]->update(['document_id' => $documentRegistre->id]);
+                $documentsCrees[] = $documentRegistre;
+
+                // Diplôme : environ deux tiers déjà déposés et retirés, le
+                // reste encore en attente — voir le docblock de la migration
+                // 2026_10_05_000001_add_retrait_diplome_to_pv_soutenances_table.php
+                // pour le détail des champs de retrait.
+                if ($estRetire) {
+                    $documentDiplome = $this->creerDocument(
+                        $admin,
+                        "PV de soutenance - {$pvSoutenance->nomComplet()} - Diplôme",
+                        [
+                            'type_document_id' => $typePvSoutenance->id,
+                            'filiere_id' => $pvSoutenance->filiere_id,
+                            'theme_memoire' => $pvSoutenance->theme,
+                            'date_soutenance' => $pvSoutenance->date_soutenance,
+                        ],
+                    );
+                    $casesParRole[PvSoutenanceFichier::ROLE_DIPLOME]->update(['document_id' => $documentDiplome->id]);
+                    $documentsCrees[] = $documentDiplome;
+
+                    $pvSoutenance->update([
+                        'diplome_retirant' => PvSoutenance::RETIRANT_ETUDIANT,
+                        'diplome_date_retrait' => now()->subDays(random_int(1, 60))->toDateString(),
+                        'diplome_retrait_enregistre_par_id' => $admin->id,
+                        'diplome_retrait_enregistre_le' => now()->subDays(random_int(0, 60)),
+                    ]);
+                }
             }
         }
 
@@ -276,7 +454,10 @@ class DocumentSeeder extends Seeder
         ];
 
         foreach ($exemplesAvecSousType as $exemple) {
-            $type = TypeDocument::query()->where('code', $exemple['code'])->where('actif', true)->first();
+            // SANS filtre `actif` (les trois codes ci-dessus sont désactivés
+            // par défaut depuis le "menu allégé") — même raisonnement que les
+            // lookups en tête de run().
+            $type = TypeDocument::query()->where('code', $exemple['code'])->first();
             $sousTypesDuType = $sousTypesParType->get($exemple['code'], collect());
 
             if (! $type || $sousTypesDuType->isEmpty()) {
@@ -366,8 +547,11 @@ class DocumentSeeder extends Seeder
         }
 
         // --------------------------------------------------------------
-        // 6) Quelques documents dans la corbeille, pour que l'écran
-        // "Corbeille" (menu dédié) ait du contenu dès le départ.
+        // 6) Quelques enregistrements mis à la corbeille, pour que les
+        // écrans "Corbeille" (le générique, sur Documents, ET ceux propres
+        // à chaque écran dédié — voir PvSoutenanceController::index()/
+        // SessionDeliberationController::index()/SessionReleveController::index(),
+        // filtre `corbeille`) aient du contenu dès le départ.
         // --------------------------------------------------------------
         // ->random(0) sur une collection vide renvoie simplement une
         // collection vide (pas d'exception) : sûr même si $documentsCrees
@@ -377,7 +561,19 @@ class DocumentSeeder extends Seeder
             ->random(min(3, count($documentsCrees)))
             ->each(fn (Document $document) => $document->delete());
 
-        $this->command?->info(count($documentsCrees).' document(s) de démonstration créé(s).');
+        collect($pvSoutenancesCreees)
+            ->random(min(1, count($pvSoutenancesCreees)))
+            ->each(fn (PvSoutenance $pvSoutenance) => $pvSoutenance->delete());
+
+        collect($sessionsDeliberationCreees)
+            ->random(min(1, count($sessionsDeliberationCreees)))
+            ->each(fn (SessionDeliberation $session) => $session->delete());
+
+        collect($sessionsReleveCreees)
+            ->random(min(1, count($sessionsReleveCreees)))
+            ->each(fn (SessionReleve $session) => $session->delete());
+
+        $this->command?->info(count($documentsCrees).' document(s) de démonstration créé(s) (dont '.count($pvSoutenancesCreees).' PV de soutenance, '.count($sessionsDeliberationCreees).' session(s) de délibération et '.count($sessionsReleveCreees).' session(s) de relevé).');
     }
 
     /**

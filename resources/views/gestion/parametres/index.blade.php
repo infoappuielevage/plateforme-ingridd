@@ -90,6 +90,19 @@
     </div>
 
     <div class="card shadow-sm mb-3">
+        <div class="card-header bg-transparent"><i class="bi bi-mortarboard"></i> Doctorat</div>
+        <div class="card-body">
+            <label class="form-label">Nombre d'années de thèse <span class="text-danger">*</span></label>
+            <div class="input-group" style="max-width: 260px;">
+                <input type="number" name="nombre_annees_these_doctorat" class="form-control" min="1" max="10"
+                       value="{{ old('nombre_annees_these_doctorat', $parametres->nombre_annees_these_doctorat ?? 3) }}" required>
+                <span class="input-group-text">années</span>
+            </div>
+            <div class="form-text">Détermine combien de cases "Année de thèse" sont créées à l'ouverture d'une session Doctorat — aussi bien pour PV de délibération que pour Relevés de notes.</div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
         <div class="card-header bg-transparent"><i class="bi bi-clock-history"></i> Historique (audit)</div>
         <div class="card-body">
             <label class="form-label">Purge automatique après <span class="text-danger">*</span></label>

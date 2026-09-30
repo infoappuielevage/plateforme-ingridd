@@ -54,4 +54,23 @@ class Semestres
             ->mapWithKeys(fn (int $numero) => [$numero => "Semestre {$numero}"])
             ->all();
     }
+
+    /**
+     * Sens inverse de PAR_CODE_NIVEAU : quel code niveau (L1, L2...)
+     * correspond à un numéro de semestre donné. Utilisé par
+     * App\Http\Controllers\SessionDeliberationController pour rattacher
+     * automatiquement chaque fichier "Semestre N" d'une session de
+     * délibération au bon Niveau (L1S1 → L1, M2S9/M2S10 → M2...), comme le
+     * reste de l'application le fait déjà pour les relevés de notes.
+     */
+    public static function codeNiveauPourSemestre(int $numero): ?string
+    {
+        foreach (self::PAR_CODE_NIVEAU as $code => $numeros) {
+            if (in_array($numero, $numeros, true)) {
+                return $code;
+            }
+        }
+
+        return null;
+    }
 }

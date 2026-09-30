@@ -25,13 +25,40 @@
                 </a>
             @endif
         @endif
+
+        @if ($corbeille && $corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('documents', 'delete'))
+            <form method="POST" action="{{ route('gestion.documents.corbeille.vider') }}" class="d-inline"
+                  onsubmit="return confirm('Tous les documents actuellement dans la corbeille seront supprimés définitivement, avec leur fichier. Cette action est irréversible. Continuer ?');">
+                @csrf
+                @method('DELETE')
+                <button type="submit" class="btn btn-outline-danger">
+                    <i class="bi bi-trash3-fill"></i> Vider la corbeille
+                </button>
+            </form>
+        @endif
     </div>
 </div>
+
+@unless ($corbeille)
+    <ul class="nav nav-tabs mb-3">
+        @foreach ($onglets as $cle => $donnees)
+            <li class="nav-item">
+                <a class="nav-link {{ $onglet === $cle ? 'active' : '' }}"
+                   href="{{ route('gestion.documents.index', array_merge(request()->except('page'), ['onglet' => $cle])) }}">
+                    {{ $donnees['label'] }}
+                </a>
+            </li>
+        @endforeach
+    </ul>
+@endunless
 
 <div class="card shadow-sm p-3 mb-3">
     <form method="GET" action="{{ route('gestion.documents.index') }}" class="row g-2 align-items-end">
         @if ($corbeille)
             <input type="hidden" name="corbeille" value="1">
+        @endif
+        @if ($onglet !== 'tous')
+            <input type="hidden" name="onglet" value="{{ $onglet }}">
         @endif
 
         <div class="col-md-3">
@@ -86,11 +113,55 @@
     </form>
 </div>
 
+@php $peutSupprimer = \App\Support\ResourceAccess::can('documents', 'delete'); @endphp
+
+@if ($peutSupprimer)
+    {{-- Formulaire "porteur" de la sélection groupée : vide, sans rendu visuel.
+         Les cases à cocher (dans le tableau) et les boutons de la barre
+         ci-dessous s'y rattachent via l'attribut HTML `form="..."` plutôt que
+         d'être imbriqués dedans — un <form> ne peut pas en contenir un autre,
+         or chaque ligne a déjà son propre <form> pour les actions
+         individuelles (restaurer, supprimer...). Une seule route par bouton
+         via `formaction` ; toutes en POST (voir routes/web.php) puisque HTML
+         ne permet pas de `formmethod="delete"`. --}}
+    <form id="formSelectionDocuments" method="POST" class="d-none">
+        @csrf
+    </form>
+
+    <div id="barreActionsGroupees" class="alert alert-secondary d-none align-items-center justify-content-between gap-2 mb-3">
+        <span><strong id="compteurSelectionDocuments">0</strong> document(s) sélectionné(s)</span>
+        <div class="d-flex gap-2">
+            @if (! $corbeille)
+                <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille-groupee') }}"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Mettre les documents sélectionnés à la corbeille ?');">
+                    <i class="bi bi-trash3"></i> Mettre à la corbeille
+                </button>
+            @else
+                <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille.restaurer-groupe') }}"
+                        class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                </button>
+                <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille.force-destroy-groupe') }}"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Supprimer définitivement les documents sélectionnés ? Cette action est irréversible.');">
+                    <i class="bi bi-x-circle"></i> Supprimer définitivement
+                </button>
+            @endif
+        </div>
+    </div>
+@endif
+
 <div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
+                    @if ($peutSupprimer)
+                        <th style="width: 2rem;">
+                            <input type="checkbox" class="form-check-input" id="selectionnerTousDocuments" title="Tout sélectionner">
+                        </th>
+                    @endif
                     <th>Type</th>
                     <th>Filière / Niveau / Année</th>
                     <th>Fichier</th>
@@ -102,6 +173,12 @@
             <tbody>
                 @forelse ($documents as $document)
                     <tr>
+                        @if ($peutSupprimer)
+                            <td>
+                                <input type="checkbox" class="form-check-input case-selection-document"
+                                       name="documents[]" value="{{ $document->id }}" form="formSelectionDocuments">
+                            </td>
+                        @endif
                         <td>
                             <div class="fw-semibold">{{ $document->typeDocument?->libelle ?? '—' }}</div>
                             @if ($document->sousTypeDocument)
@@ -135,6 +212,9 @@
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">
                                 @if (! $corbeille)
+                                    <a href="{{ route('documents.voir', $document) }}" target="_blank" rel="noopener" class="btn btn-outline-secondary" title="Voir">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
                                     <a href="{{ route('documents.telecharger', $document) }}" class="btn btn-outline-secondary" title="Télécharger">
                                         <i class="bi bi-download"></i>
                                     </a>
@@ -188,7 +268,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6">
+                        <td colspan="{{ $peutSupprimer ? 7 : 6 }}">
                             <div class="empty-state text-center py-5">
                                 <i class="bi bi-inbox fs-1 text-muted"></i>
                                 <p class="text-muted mb-0">
@@ -209,3 +289,46 @@
     @endif
 </div>
 @endsection
+
+@if ($peutSupprimer)
+    @section('scripts')
+        <script>
+            (function () {
+                const casesLigne = document.querySelectorAll('.case-selection-document');
+                if (! casesLigne.length) return;
+
+                const caseTout = document.getElementById('selectionnerTousDocuments');
+                const barre = document.getElementById('barreActionsGroupees');
+                const compteur = document.getElementById('compteurSelectionDocuments');
+
+                function casesCochees() {
+                    return Array.from(casesLigne).filter(function (c) { return c.checked; });
+                }
+
+                function actualiserBarre() {
+                    const nombre = casesCochees().length;
+                    barre.classList.toggle('d-none', nombre === 0);
+                    barre.classList.toggle('d-flex', nombre > 0);
+                    compteur.textContent = nombre;
+                    if (caseTout) {
+                        caseTout.checked = nombre > 0 && nombre === casesLigne.length;
+                        caseTout.indeterminate = nombre > 0 && nombre < casesLigne.length;
+                    }
+                }
+
+                casesLigne.forEach(function (c) {
+                    c.addEventListener('change', actualiserBarre);
+                });
+
+                if (caseTout) {
+                    caseTout.addEventListener('change', function () {
+                        casesLigne.forEach(function (c) { c.checked = caseTout.checked; });
+                        actualiserBarre();
+                    });
+                }
+
+                actualiserBarre();
+            })();
+        </script>
+    @endsection
+@endif

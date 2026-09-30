@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
 use App\Models\User;
+use Database\Seeders\TypeDocumentSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -142,8 +143,78 @@ class SecretariatControllerTest extends TestCase
 
         $reponse = $this->actingAs($admin)->get(route('gestion.dashboard'));
 
+        // On vérifie la présence du LIEN Secrétariat lui-même (pas juste le
+        // libellé) : un type non épinglé peut légitimement apparaître
+        // ailleurs sur le tableau de bord (voir App\Support\MenuDocuments,
+        // le sous-menu "Types de documents" liste TOUS les types actifs,
+        // épinglés ou non — deux usages différents, voir son docblock) sans
+        // pour autant avoir sa propre entrée Secrétariat.
         $reponse->assertOk()
-            ->assertSee('Délibération')
-            ->assertDontSee('Contrats Génériques');
+            ->assertSee(route('gestion.secretariat', ['code' => 'PV_DELIBERATION']), false)
+            ->assertDontSee(route('gestion.secretariat', ['code' => 'CONTRAT']), false);
+    }
+
+    /**
+     * Nettoyage demandé par le client ("plus de doublons ailleurs") : PV de
+     * soutenance, PV de délibération et Relevés de notes ont chacun leur
+     * propre écran dédié (liens directs dans la sidebar, voir
+     * PvSoutenanceController/SessionDeliberationController/
+     * SessionReleveController) — le raccourci Secrétariat générique, qui
+     * menait à la même chose par un autre chemin (une simple liste de
+     * fichiers, sans la structure par étudiant/session), a donc été retiré
+     * pour ces trois-là (voir TypeDocumentSeeder::CONFIGURATION).
+     * ATTESTATION n'a pas d'écran dédié équivalent : il garde son raccourci.
+     */
+    /**
+     * Sur une installation fraîche (état actuel du référentiel, voir
+     * TypeDocumentSeeder) : PV de soutenance, PV de délibération et Relevés
+     * de notes n'ont plus de raccourci Secrétariat (chacun a son propre
+     * écran dédié désormais) ; ATTESTATION, qui n'a pas d'écran dédié
+     * équivalent, a en plus été temporairement désactivé dans le cadre du
+     * nettoyage du menu ("trop d'éléments dont on a plus besoin pour le
+     * moment") — son raccourci disparaît donc aussi, pour la même raison
+     * que n'importe quel autre type désactivé (voir
+     * test_un_type_epingle_mais_desactive_napparait_pas_au_secretariat
+     * ci-dessous pour la mécanique générique). Rien n'est épinglé au
+     * Secrétariat juste après une installation fraîche : c'est le client
+     * qui réactivera ce dont il a besoin, au fur et à mesure, depuis
+     * Administration > Référentiels > Types de documents.
+     */
+    public function test_les_types_avec_ecran_dedie_ne_sont_plus_epingles_au_secretariat(): void
+    {
+        (new TypeDocumentSeeder)->run();
+        $admin = User::factory()->admin()->create();
+
+        $reponse = $this->actingAs($admin)->get(route('gestion.dashboard'));
+
+        $reponse->assertOk()
+            ->assertDontSee(route('gestion.secretariat', ['code' => 'PV_SOUTENANCE']), false)
+            ->assertDontSee(route('gestion.secretariat', ['code' => 'PV_DELIBERATION']), false)
+            ->assertDontSee(route('gestion.secretariat', ['code' => 'RELEVE_NOTES']), false)
+            ->assertDontSee(route('gestion.secretariat', ['code' => 'ATTESTATION']), false);
+    }
+
+    /**
+     * Mécanique générique (indépendante des données actuelles du
+     * référentiel) : désactiver un type depuis Administration > Référentiels
+     * > Types de documents doit aussi masquer son raccourci Secrétariat,
+     * pas seulement l'empêcher d'apparaître pour un nouveau document — sinon
+     * le raccourci resterait affiché pour un type que le client a
+     * justement dit ne plus vouloir voir "pour le moment" (voir
+     * resources/views/layouts/gestion.blade.php, $elementsSecretariat).
+     */
+    public function test_un_type_epingle_mais_desactive_napparait_pas_au_secretariat(): void
+    {
+        $admin = User::factory()->admin()->create();
+        TypeDocument::factory()->create([
+            'code' => 'X_EPINGLE_INACTIF',
+            'libelle' => 'Type épinglé désactivé',
+            'epingle_secretariat' => true,
+            'actif' => false,
+        ]);
+
+        $reponse = $this->actingAs($admin)->get(route('gestion.dashboard'));
+
+        $reponse->assertOk()->assertDontSee(route('gestion.secretariat', ['code' => 'X_EPINGLE_INACTIF']), false);
     }
 }

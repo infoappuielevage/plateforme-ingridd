@@ -47,6 +47,13 @@ class ParametresController extends Controller
             'frequence_sauvegarde_auto' => ['required', 'string', 'in:quotidienne,hebdomadaire,mensuelle'],
             'retention_sauvegardes_nombre' => ['required', 'integer', 'min:1'],
             'mysqldump_chemin' => ['nullable', 'string', 'max:255'],
+            // Nullable (contrairement aux autres limites numériques de cet
+            // écran) : ce champ est nouveau, et un ancien appel à cette
+            // route qui ne l'enverrait pas (ex. tests déjà en place avant
+            // son ajout) ne doit jamais faire échouer l'enregistrement des
+            // autres réglages — SessionDeliberation::nombreAnneesTheseDoctorat()
+            // retombe de toute façon sur 3 si la valeur est vide.
+            'nombre_annees_these_doctorat' => ['nullable', 'integer', 'min:1', 'max:10'],
         ]);
 
         $parametres = Parametre::actuel();

@@ -48,19 +48,38 @@ use Illuminate\Database\Seeder;
  * aucun type précis — sans ça, un tel document n'aurait litéralement aucun
  * type possible à choisir.
  *
- * Quatre types sont désignés comme priorité de mise en place de l'espace de
- * gestion (sur demande explicite du client, "avant de revoir les autres") —
- * `epingle_secretariat = true` leur donne une entrée dédiée dans le menu
- * Secrétariat (voir resources/views/layouts/gestion.blade.php) :
+ * Quatre types avaient été désignés comme priorité de mise en place de
+ * l'espace de gestion (sur demande explicite du client, "avant de revoir
+ * les autres"), chacun avec ses champs complémentaires propres :
  * - `ATTESTATION` (et `DIPLOME`, son équivalent retiré, voir plus bas) —
  *   "Gestion des diplômes" : `champs_diplome_actifs`.
  * - `PV_SOUTENANCE` — "Registre des soutenances" (numérisation du registre
  *   papier, voir App\Support\TypesPvSoutenance) : `champs_soutenance_actifs`.
  * - `RELEVE_NOTES` — "Gestion des relevés de notes" : `champ_semestre_actif`.
- * - `PV_DELIBERATION` — "Gestion des PV de délibération" : épinglé, mais
- *   volontairement SANS champ complémentaire (voir le docblock plus haut :
- *   demande explicite du client de ne pas étendre les champs dédiés à ce
- *   type).
+ * - `PV_DELIBERATION` — "Gestion des PV de délibération" : volontairement
+ *   SANS champ complémentaire (voir le docblock plus haut : demande
+ *   explicite du client de ne pas étendre les champs dédiés à ce type).
+ *
+ * À l'origine, ces quatre types recevaient aussi `epingle_secretariat =
+ * true` — une entrée dans le menu "Secrétariat" (voir
+ * resources/views/layouts/gestion.blade.php) pointant vers une page
+ * générique listant les App\Models\Document de ce type (voir
+ * SecretariatController). PV_SOUTENANCE, RELEVE_NOTES et PV_DELIBERATION
+ * ont depuis chacun reçu un véritable écran dédié — App\Models\PvSoutenance/
+ * SessionDeliberation/SessionReleve, avec leur propre lien direct dans la
+ * sidebar (voir PvSoutenanceController/SessionDeliberationController/
+ * SessionReleveController) — bien plus complet que la simple liste de
+ * fichiers du Secrétariat (un enregistrement par étudiant/session, pas
+ * juste un fichier). `epingle_secretariat` est donc retiré des trois pour
+ * ne plus avoir deux chemins différents vers la même chose (demande
+ * explicite du client, "plus de doublons"). Seul `ATTESTATION`, qui n'a pas
+ * encore d'écran dédié équivalent, garde son entrée Secrétariat.
+ *
+ * Les documents déjà déposés via le Secrétariat pour ces trois types AVANT
+ * ce changement restent inchangés en base (toujours de vrais
+ * App\Models\Document, `type_document_id` intact) et restent consultables
+ * depuis "Tous les documents" (filtrable par type) — seul le raccourci de
+ * navigation disparaît, aucune donnée n'est touchée ni masquée.
  *
  * Tout autre type reste utilisable normalement (liste générale des
  * documents, filtrable par type) mais sans entrée dédiée tant que l'admin
@@ -68,6 +87,23 @@ use Illuminate\Database\Seeder;
  * documents — voir la migration 2026_09_29_000021_... pour le détail de ces
  * quatre colonnes, toutes modifiables depuis l'administration sans toucher
  * au code.
+ *
+ * Menu allégé (demande explicite du client, "trop d'éléments dont on a plus
+ * besoin pour le moment... on reconstruira au fur et à mesure qu'on
+ * avance") : sur une INSTALLATION NEUVE, seuls `PV_SOUTENANCE`,
+ * `PV_DELIBERATION`, `RELEVE_NOTES` (les trois écrans dédiés déjà
+ * construits) et `AUTRE` (filet de sécurité, voir plus haut) sont créés
+ * `actif = true` — voir CODES_ACTIFS_PAR_DEFAUT ci-dessous. Sur la base déjà
+ * en service, ce même changement a été appliqué une fois pour toutes par la
+ * migration 2026_10_06_000001_desactiver_types_document_non_prioritaires
+ * (voir son docblock) plutôt qu'ici : une fois une ligne créée, `actif`
+ * n'est PLUS JAMAIS réécrit par ce seeder (voir `run()` ci-dessous) — sinon
+ * rejouer ce seeder lors d'un futur déploiement annulerait en silence une
+ * réactivation faite entre-temps par le client depuis Administration >
+ * Référentiels > Types de documents. Tous les autres types restent
+ * entièrement définis dans `$types` ci-dessous (rien n'est supprimé de la
+ * liste recensée par le client), juste invisibles pour l'instant dans les
+ * menus et le formulaire de création tant qu'ils ne sont pas réactivés.
  */
 class TypeDocumentSeeder extends Seeder
 {
@@ -80,10 +116,23 @@ class TypeDocumentSeeder extends Seeder
     protected const CONFIGURATION = [
         'ATTESTATION' => ['champs_diplome_actifs' => true, 'epingle_secretariat' => true],
         'DIPLOME' => ['champs_diplome_actifs' => true],
-        'PV_SOUTENANCE' => ['champs_soutenance_actifs' => true, 'epingle_secretariat' => true],
-        'RELEVE_NOTES' => ['champ_semestre_actif' => true, 'epingle_secretariat' => true],
-        'PV_DELIBERATION' => ['epingle_secretariat' => true],
+        // Pas (ou plus) d'epingle_secretariat pour ces trois-là : ils ont
+        // désormais leur propre écran dédié (voir le docblock de la
+        // classe) — le raccourci Secrétariat générique ferait double
+        // emploi avec leur lien direct dans la sidebar.
+        'PV_SOUTENANCE' => ['champs_soutenance_actifs' => true],
+        'RELEVE_NOTES' => ['champ_semestre_actif' => true],
     ];
+
+    /**
+     * `actif` initial d'un type qui n'existe pas encore en base (voir le
+     * docblock de la classe) — ignoré pour un type déjà existant, qui garde
+     * toujours sa valeur actuelle. Liste volontairement courte pour
+     * l'instant : à compléter au fur et à mesure que chaque nouveau volet
+     * est prêt, sans jamais avoir besoin de revenir modifier autre chose
+     * dans ce fichier.
+     */
+    protected const CODES_ACTIFS_PAR_DEFAUT = ['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'AUTRE'];
 
     public function run(): void
     {
@@ -128,7 +177,14 @@ class TypeDocumentSeeder extends Seeder
             $drapeaux = $drapeauxParDefaut;
             $drapeaux = array_merge($drapeaux, self::CONFIGURATION[$type['code']] ?? []);
 
-            TypeDocument::query()->updateOrCreate(['code' => $type['code']], $type + $drapeaux + ['actif' => true]);
+            // `actif` n'est repris de CODES_ACTIFS_PAR_DEFAUT que pour une
+            // ligne qui n'existe pas encore (première installation) — une
+            // fois créée, sa valeur appartient à l'administrateur (voir le
+            // docblock de la classe), ce seeder ne la touche plus jamais.
+            $actifExistant = TypeDocument::query()->where('code', $type['code'])->value('actif');
+            $actif = $actifExistant ?? in_array($type['code'], self::CODES_ACTIFS_PAR_DEFAUT, true);
+
+            TypeDocument::query()->updateOrCreate(['code' => $type['code']], $type + $drapeaux + ['actif' => $actif]);
         }
 
         // Types de l'ancienne liste sans équivalent évident dans la nouvelle

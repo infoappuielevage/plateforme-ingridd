@@ -51,6 +51,39 @@ class CreerSauvegarde extends Command
 
     public function handle(): int
     {
+        // Appelée de façon SYNCHRONE depuis une requête web (voir
+        // SauvegardeController::store()) : sans ça, la limite par défaut de
+        // PHP (souvent 30 ou 60 secondes sur une config Apache/Laragon
+        // Windows classique) peut interrompre BRUTALEMENT le script en plein
+        // export mysqldump ou compression des documents — une erreur fatale
+        // de ce type n'est pas une Exception, Laravel ne peut ni la
+        // rattraper ni l'afficher proprement, et la requête s'arrête sans
+        // réponse cohérente (c'est ce qui pouvait ressembler à une
+        // déconnexion : le script meurt avant d'avoir pu renvoyer la page).
+        set_time_limit(0);
+
+        try {
+            return $this->creerLarchive();
+        } catch (\Throwable $exception) {
+            // Filet de sécurité : cette commande est appelée depuis une
+            // requête web (voir SauvegardeController::store()) — une
+            // exception qui s'en échapperait NON rattrapée deviendrait une
+            // erreur HTTP 500 que ce contrôleur ne gère pas (il ne sait
+            // afficher que "$code !== 0", pas une exception), invisible
+            // pour l'utilisateur : exactement le genre de plantage qui
+            // pouvait ressembler à une déconnexion (voir aussi
+            // set_time_limit() et le flux ci-dessous, pour la même raison).
+            // On journalise le détail complet (storage/logs/laravel.log)
+            // tout en affichant un message clair à l'écran.
+            report($exception);
+            $this->error('Erreur inattendue pendant la sauvegarde : '.$exception->getMessage());
+
+            return self::FAILURE;
+        }
+    }
+
+    protected function creerLarchive(): int
+    {
         if (! class_exists(ZipArchive::class)) {
             $this->error('L\'extension PHP "zip" n\'est pas installée sur ce serveur : impossible de créer une sauvegarde.');
 
@@ -92,7 +125,19 @@ class CreerSauvegarde extends Command
             return self::FAILURE;
         }
 
-        Storage::disk('sauvegardes')->put($nomFichier, file_get_contents($cheminTemporaire));
+        // En flux (fopen), jamais file_get_contents() : une archive de
+        // plusieurs dizaines/centaines de Mo (courant dès que la
+        // bibliothèque de documents grossit) chargée entièrement en mémoire
+        // dépasse vite la limite PHP par défaut (souvent 128 Mo) et provoque
+        // une erreur fatale "Allowed memory size exhausted" — NON
+        // rattrapable par un try/catch, elle aussi, et pour la même raison
+        // que set_time_limit() ci-dessus : le script meurt sans que Laravel
+        // ait la moindre chance d'afficher un message clair.
+        $flux = fopen($cheminTemporaire, 'r');
+        Storage::disk('sauvegardes')->put($nomFichier, $flux);
+        if (is_resource($flux)) {
+            fclose($flux);
+        }
         unlink($cheminTemporaire);
 
         $this->info("Sauvegarde créée : {$nomFichier}");
@@ -137,7 +182,7 @@ class CreerSauvegarde extends Command
      * restaurable avec `mysql nom_base < dump.sql`). Le mot de passe est
      * transmis via la variable d'environnement MYSQL_PWD plutôt qu'en
      * argument de commande, pour ne pas apparaître dans la liste des
-     * processus du serveur.
+     * processus du serveur — SAUF s'il est vide (voir ci-dessous).
      *
      * @return bool true si l'export a réussi et a été ajouté à l'archive.
      */
@@ -159,8 +204,28 @@ class CreerSauvegarde extends Command
             $config['database'],
         ];
 
+        // Cas très courant en local (root sans mot de passe, ex. Laragon
+        // par défaut) : sous Windows, une variable d'environnement à VALEUR
+        // VIDE est purement et simplement supprimée par l'API de création de
+        // processus — mysqldump démarre alors sans MYSQL_PWD du tout et,
+        // ne trouvant pas non plus de "--password" sur la ligne de commande,
+        // se met à ATTENDRE un mot de passe tapé au clavier sur un
+        // terminal... qui n'existe pas ici (le process est lancé sans TTY
+        // depuis une requête web). Résultat : plus aucune sortie, plus
+        // aucune erreur, le process reste bloqué jusqu'au timeout de 300s
+        // ci-dessous — exactement le blocage/"déconnexion" observé.
+        // "--password=" (signe égal, rien après) est la syntaxe standard
+        // pour dire explicitement "mot de passe vide" SANS invite,
+        // contrairement à "--password" seul qui, lui, invite toujours.
+        if ($config['password'] === '' || $config['password'] === null) {
+            $commande[] = '--password=';
+            $environnement = null;
+        } else {
+            $environnement = ['MYSQL_PWD' => $config['password']];
+        }
+
         try {
-            $processus = new Process($commande, null, ['MYSQL_PWD' => $config['password']]);
+            $processus = new Process($commande, null, $environnement);
             $processus->setTimeout(300);
             $processus->run();
 

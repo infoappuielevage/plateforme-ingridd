@@ -14,32 +14,79 @@ use Tests\TestCase;
  * COURRIER, RELEVE_NOTES) sont réutilisés (renommés au besoin) plutôt que
  * recréés, pour ne jamais faire perdre son type à un document déjà classé ;
  * les types sans équivalent évident (LISTE_ETUDIANTS, DIPLOME, FACTURE,
- * RAPPORT) sont désactivés, jamais supprimés.
+ * RAPPORT) sont désactivés, jamais supprimés. Menu allégé (voir aussi le
+ * docblock de la classe) : sur une base neuve, seuls PV_SOUTENANCE/
+ * PV_DELIBERATION/RELEVE_NOTES/AUTRE sont créés actifs, tout le reste de la
+ * liste est créé désactivé (réactivable sans toucher au code).
  */
 class TypeDocumentSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_les_types_reutilises_sont_renommes_et_restent_actifs(): void
+    public function test_les_types_reutilises_sont_renommes(): void
     {
         (new TypeDocumentSeeder)->run();
 
-        $this->assertDatabaseHas('type_documents', ['code' => 'ATTESTATION', 'libelle' => 'Attestation', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'PV_SOUTENANCE', 'libelle' => 'PV de soutenance', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'PV_DELIBERATION', 'libelle' => 'Délibération', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'CONTRAT', 'libelle' => 'Contrats', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'COURRIER', 'libelle' => 'Correspondance et lettre de partenariat', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'RELEVE_NOTES', 'libelle' => 'Relevés de notes', 'actif' => true]);
+        $this->assertDatabaseHas('type_documents', ['code' => 'ATTESTATION', 'libelle' => 'Attestation']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'PV_SOUTENANCE', 'libelle' => 'PV de soutenance']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'PV_DELIBERATION', 'libelle' => 'Délibération']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'CONTRAT', 'libelle' => 'Contrats']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'COURRIER', 'libelle' => 'Correspondance et lettre de partenariat']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'RELEVE_NOTES', 'libelle' => 'Relevés de notes']);
     }
 
-    public function test_les_nouveaux_types_sont_crees_et_actifs(): void
+    public function test_les_nouveaux_types_sont_crees(): void
     {
         (new TypeDocumentSeeder)->run();
 
-        $this->assertDatabaseHas('type_documents', ['code' => 'BORDEREAU', 'libelle' => 'Bordereau', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'CONGE', 'libelle' => 'Autorisation de congé', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'LISTE_DIPLOME', 'actif' => true]);
-        $this->assertDatabaseHas('type_documents', ['code' => 'AUTRE', 'libelle' => 'Autre', 'actif' => true]);
+        $this->assertDatabaseHas('type_documents', ['code' => 'BORDEREAU', 'libelle' => 'Bordereau']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'CONGE', 'libelle' => 'Autorisation de congé']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'LISTE_DIPLOME']);
+        $this->assertDatabaseHas('type_documents', ['code' => 'AUTRE', 'libelle' => 'Autre']);
+    }
+
+    /**
+     * Menu allégé (demande explicite du client, "trop d'éléments dont on a
+     * plus besoin pour le moment") : sur une installation neuve, seuls les
+     * trois écrans dédiés déjà construits et "Autre" (filet de sécurité)
+     * sont actifs — tout le reste est créé désactivé, réactivable
+     * individuellement depuis Administration > Référentiels > Types de
+     * documents sans toucher au code (voir CODES_ACTIFS_PAR_DEFAUT).
+     */
+    public function test_seuls_les_ecrans_dedies_et_autre_sont_actifs_sur_une_base_neuve(): void
+    {
+        (new TypeDocumentSeeder)->run();
+
+        foreach (['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'AUTRE'] as $code) {
+            $this->assertDatabaseHas('type_documents', ['code' => $code, 'actif' => true]);
+        }
+
+        foreach (['ATTESTATION', 'CONTRAT', 'COURRIER', 'BORDEREAU', 'CONGE', 'LISTE_DIPLOME', 'ORGANIGRAMME'] as $code) {
+            $this->assertDatabaseHas('type_documents', ['code' => $code, 'actif' => false]);
+        }
+    }
+
+    /**
+     * Une fois une ligne créée, `actif` appartient à l'administrateur — un
+     * type que le client a réactivé lui-même depuis Administration >
+     * Référentiels > Types de documents ne doit jamais être redésactivé en
+     * silence par un futur `php artisan db:seed` (ex. lors d'un déploiement).
+     */
+    public function test_rejouer_le_seeder_ne_touche_plus_a_lactif_dun_type_deja_existant(): void
+    {
+        (new TypeDocumentSeeder)->run();
+
+        $attestation = TypeDocument::query()->where('code', 'ATTESTATION')->firstOrFail();
+        $this->assertFalse($attestation->actif);
+        $attestation->update(['actif' => true]);
+
+        $releve = TypeDocument::query()->where('code', 'RELEVE_NOTES')->firstOrFail();
+        $releve->update(['actif' => false]);
+
+        (new TypeDocumentSeeder)->run();
+
+        $this->assertTrue($attestation->fresh()->actif);
+        $this->assertFalse($releve->fresh()->actif);
     }
 
     /**
@@ -71,13 +118,17 @@ class TypeDocumentSeederTest extends TestCase
     /**
      * Les quatre types désignés comme priorité par le client ("PV de
      * délibération, relevés de notes, diplômes, registre des soutenances —
-     * avant de revoir les autres") reçoivent une entrée dédiée dans le menu
-     * Secrétariat (`epingle_secretariat`) et, pour ceux qui en ont besoin,
+     * avant de revoir les autres") reçoivent, pour ceux qui en ont besoin,
      * les champs complémentaires correspondants — voir
      * TypeDocumentSeeder::CONFIGURATION et la migration
-     * 2026_09_29_000021_....
+     * 2026_09_29_000021_.... Seul ATTESTATION reçoit encore
+     * `epingle_secretariat` : les trois autres ont depuis un écran dédié à
+     * part entière (PvSoutenanceController/SessionDeliberationController/
+     * SessionReleveController), voir
+     * test_les_types_avec_ecran_dedie_ne_sont_plus_epingles_au_secretariat
+     * dans SecretariatControllerTest pour la vérification bout en bout.
      */
-    public function test_les_quatre_types_prioritaires_sont_configures_et_epingles(): void
+    public function test_les_quatre_types_prioritaires_recoivent_leurs_champs_complementaires(): void
     {
         (new TypeDocumentSeeder)->run();
 
@@ -89,19 +140,19 @@ class TypeDocumentSeederTest extends TestCase
         $this->assertDatabaseHas('type_documents', [
             'code' => 'PV_SOUTENANCE',
             'champs_soutenance_actifs' => true,
-            'epingle_secretariat' => true,
+            'epingle_secretariat' => false,
         ]);
         $this->assertDatabaseHas('type_documents', [
             'code' => 'RELEVE_NOTES',
             'champ_semestre_actif' => true,
-            'epingle_secretariat' => true,
+            'epingle_secretariat' => false,
         ]);
         $this->assertDatabaseHas('type_documents', [
             'code' => 'PV_DELIBERATION',
             'champs_diplome_actifs' => false,
             'champs_soutenance_actifs' => false,
             'champ_semestre_actif' => false,
-            'epingle_secretariat' => true,
+            'epingle_secretariat' => false,
         ]);
     }
 

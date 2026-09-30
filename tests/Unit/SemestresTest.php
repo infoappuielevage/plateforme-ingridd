@@ -41,4 +41,16 @@ class SemestresTest extends TestCase
         $this->assertSame('Semestre 1', $options[1]);
         $this->assertSame('Semestre 10', $options[10]);
     }
+
+    /** Sens inverse de PAR_CODE_NIVEAU — voir App\Http\Controllers\SessionDeliberationController::niveauPour(). */
+    public function test_le_code_niveau_dun_semestre_est_correctement_deduit(): void
+    {
+        $this->assertSame('L1', Semestres::codeNiveauPourSemestre(1));
+        $this->assertSame('L1', Semestres::codeNiveauPourSemestre(2));
+        $this->assertSame('L2', Semestres::codeNiveauPourSemestre(3));
+        $this->assertSame('L3', Semestres::codeNiveauPourSemestre(6));
+        $this->assertSame('M1', Semestres::codeNiveauPourSemestre(7));
+        $this->assertSame('M2', Semestres::codeNiveauPourSemestre(10));
+        $this->assertNull(Semestres::codeNiveauPourSemestre(11));
+    }
 }

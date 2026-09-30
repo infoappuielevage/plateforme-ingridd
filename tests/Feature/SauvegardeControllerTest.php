@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -31,6 +32,34 @@ class SauvegardeControllerTest extends TestCase
             ->filter(fn (string $f) => str_ends_with($f, '.zip'));
 
         $this->assertCount(1, $archives);
+    }
+
+    /**
+     * La commande `ingridd:sauvegarde` explique déjà précisément la cause
+     * d'un échec (mysqldump introuvable, extension "zip" absente...) via ses
+     * propres $this->error()/$this->warn() — cette sortie doit être relayée
+     * à l'écran plutôt que remplacée par un message générique qui ne
+     * permettrait pas de diagnostiquer quoi que ce soit depuis le
+     * navigateur (voir SauvegardeController::store()).
+     */
+    public function test_le_message_dechec_de_sauvegarde_reprend_la_sortie_de_la_commande(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('ingridd:sauvegarde')
+            ->andReturn(1);
+        Artisan::shouldReceive('output')
+            ->once()
+            ->andReturn('Impossible de lancer "mysqldump" : la commande n\'existe pas.');
+
+        $this->actingAs($admin)
+            ->post(route('gestion.sauvegardes.store'))
+            ->assertRedirect()
+            ->assertSessionHasErrors('sauvegarde');
+
+        $this->assertStringContainsString('mysqldump', session('errors')->first('sauvegarde'));
     }
 
     public function test_un_non_admin_ne_peut_pas_acceder_aux_sauvegardes(): void

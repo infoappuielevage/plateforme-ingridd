@@ -46,6 +46,7 @@ class Parametre extends Model
         'mysqldump_chemin',
         'frequence_sauvegarde_auto',
         'types_fichiers_autorises',
+        'nombre_annees_these_doctorat',
     ];
 
     protected function casts(): array
@@ -56,8 +57,39 @@ class Parametre extends Model
             'retention_audit_jours' => 'integer',
             'retention_sauvegardes_nombre' => 'integer',
             'types_fichiers_autorises' => 'array',
+            'nombre_annees_these_doctorat' => 'integer',
         ];
     }
+
+    /**
+     * Valeurs par défaut de la ligne id=1 à sa toute première création — mêmes
+     * valeurs que defautsSansBase() (hors nom_application/logo/couleur, qui ne
+     * sont lus qu'affichés et jamais utilisés en calcul). Déclarées ici en dur
+     * plutôt que de compter sur les DEFAULT des colonnes : firstOrCreate()
+     * construit le nouveau modèle uniquement à partir des clés qu'on lui
+     * donne, puis Eloquent n'inclut dans l'INSERT que les attributs
+     * effectivement définis sur le modèle — les colonnes absentes de ce
+     * tableau ne sont pas forcément couvertes par un DEFAULT SQL selon le
+     * pilote de base ; un enregistrement créé sans taille_max_avatar_mo
+     * explicite a déjà été vu à 0/NULL plutôt que 2, ce qui rend l'envoi
+     * d'une photo de profil impossible (validation "max:0 Ko"). Voir aussi
+     * typesFichiersAutorisesEffectifs() pour le cas d'une ligne déjà
+     * existante avant l'ajout d'un réglage (ALTER TABLE, pas d'INSERT — une
+     * ligne existante récupère alors simplement NULL, non 0/2).
+     */
+    protected const VALEURS_PAR_DEFAUT = [
+        'taille_max_document_mo' => 20,
+        'taille_max_avatar_mo' => 2,
+        'retention_audit_jours' => 730,
+        'retention_sauvegardes_nombre' => 10,
+        'frequence_sauvegarde_auto' => 'quotidienne',
+        // Voir App\Models\SessionDeliberation::nombreAnneesTheseDoctorat() et
+        // App\Models\SessionReleve::nombreAnneesTheseDoctorat() (même
+        // réglage PARTAGÉ par les deux) — durée standard d'une thèse au
+        // Burkina Faso/LMD, modifiable depuis Administration > Paramètres
+        // sans toucher au code.
+        'nombre_annees_these_doctorat' => 3,
+    ];
 
     /**
      * La planification (routes/console.php) reste quotidienne côté Laravel —
@@ -95,6 +127,7 @@ class Parametre extends Model
         // existante avant l'ajout de cette colonne (ALTER TABLE, pas
         // d'INSERT — une ligne existante récupère alors simplement NULL).
         return self::query()->firstOrCreate(['id' => 1], [
+            ...self::VALEURS_PAR_DEFAUT,
             'types_fichiers_autorises' => TypesFichiers::toutesLesCles(),
         ]);
     }
@@ -128,11 +161,7 @@ class Parametre extends Model
         return new self([
             'nom_application' => 'INGRIDD — Archives & Documents',
             'couleur_principale' => '#6366f1',
-            'taille_max_document_mo' => 20,
-            'taille_max_avatar_mo' => 2,
-            'retention_audit_jours' => 730,
-            'retention_sauvegardes_nombre' => 10,
-            'frequence_sauvegarde_auto' => 'quotidienne',
+            ...self::VALEURS_PAR_DEFAUT,
             'types_fichiers_autorises' => TypesFichiers::toutesLesCles(),
         ]);
     }

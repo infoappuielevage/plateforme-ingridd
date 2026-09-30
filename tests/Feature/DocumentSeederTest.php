@@ -3,6 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Document;
+use App\Models\PvSoutenance;
+use App\Models\PvSoutenanceFichier;
+use App\Models\SessionDeliberation;
+use App\Models\SessionDeliberationFichier;
+use App\Models\SessionReleve;
 use App\Models\User;
 use Database\Seeders\AnneeAcademiqueSeeder;
 use Database\Seeders\DocumentSeeder;
@@ -112,20 +117,54 @@ class DocumentSeederTest extends TestCase
                 ->exists()
         );
 
-        // Un PV de soutenance a bien un titulaire, un thème de mémoire, une
-        // date de soutenance et des membres du jury renseignés (voir
-        // DocumentResource::form()) — et pas de statut de retrait, ce type
-        // n'étant pas concerné par ce suivi.
-        $pvSoutenance = Document::query()
-            ->whereHas('typeDocument', fn ($q) => $q->where('code', 'PV_SOUTENANCE'))
-            ->first();
+        // Un PV de soutenance existe bien en tant qu'enregistrement DÉDIÉ
+        // (voir App\Models\PvSoutenance, qui remplace l'ancien Document "à
+        // plat" pour ce type depuis la refonte), avec son identité/thème/
+        // jury renseignés et sa case "Image du registre" effectivement
+        // remplie d'un vrai Document (type PV_SOUTENANCE, avec
+        // theme_memoire/date_soutenance renseignés — voir
+        // PvSoutenanceController::uploaderFichier() pour le mapping exact
+        // reproduit par le seeder).
+        $pvSoutenance = PvSoutenance::query()->with('fichiers.document')->first();
 
         $this->assertNotNull($pvSoutenance);
-        $this->assertNotNull($pvSoutenance->nom_titulaire);
-        $this->assertNotNull($pvSoutenance->theme_memoire);
-        $this->assertNotNull($pvSoutenance->date_soutenance);
-        $this->assertNotNull($pvSoutenance->membres_jury);
-        $this->assertNull($pvSoutenance->statut_retrait);
+        $this->assertNotNull($pvSoutenance->nom);
+        $this->assertNotNull($pvSoutenance->prenoms);
+        $this->assertNotNull($pvSoutenance->theme);
+        $this->assertNotNull($pvSoutenance->president_jury);
+
+        $caseRegistre = $pvSoutenance->fichiers->firstWhere('role', PvSoutenanceFichier::ROLE_IMAGE_REGISTRE);
+        $this->assertNotNull($caseRegistre);
+        $this->assertNotNull($caseRegistre->document_id);
+        $this->assertSame('PV_SOUTENANCE', $caseRegistre->document->typeDocument->code);
+        $this->assertNotNull($caseRegistre->document->theme_memoire);
+        $this->assertNotNull($caseRegistre->document->date_soutenance);
+        $this->assertNull($caseRegistre->document->statut_retrait);
+
+        // Au moins un diplôme déjà retiré, le reste encore en attente (voir
+        // DocumentSeeder, section 3bis, et le docblock de la migration
+        // 2026_10_05_000001_add_retrait_diplome_to_pv_soutenances_table.php).
+        $this->assertTrue(PvSoutenance::query()->whereNotNull('diplome_date_retrait')->exists());
+        $this->assertTrue(PvSoutenance::query()->whereNull('diplome_date_retrait')->exists());
+
+        // Les sessions de délibération et de relevés de notes existent elles
+        // aussi en tant qu'enregistrements dédiés, avec leurs cases (voir
+        // App\Models\SessionDeliberation/SessionReleve, DocumentSeeder
+        // sections 1bis et 2).
+        $this->assertGreaterThan(0, SessionDeliberation::query()->count());
+        $this->assertGreaterThan(0, SessionReleve::query()->count());
+
+        $sessionDeliberation = SessionDeliberation::query()->with('fichiers')->first();
+        $this->assertTrue(
+            $sessionDeliberation->fichiers->contains(fn (SessionDeliberationFichier $f) => $f->document_id !== null)
+        );
+
+        // Quelques PV de soutenance / sessions sont eux aussi dans leur
+        // propre corbeille (pas seulement la corbeille générale des
+        // documents, déjà vérifiée plus haut).
+        $this->assertGreaterThan(0, PvSoutenance::onlyTrashed()->count());
+        $this->assertGreaterThan(0, SessionDeliberation::onlyTrashed()->count());
+        $this->assertGreaterThan(0, SessionReleve::onlyTrashed()->count());
     }
 
     public function test_le_seeder_ne_duplique_pas_sil_est_rejoue(): void

@@ -2,14 +2,18 @@
 
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\ChampSupplementaireController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\ParametresController;
 use App\Http\Controllers\ProfilController;
+use App\Http\Controllers\PvSoutenanceController;
 use App\Http\Controllers\ReferentielController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SauvegardeController;
 use App\Http\Controllers\SecretariatController;
+use App\Http\Controllers\SessionDeliberationController;
+use App\Http\Controllers\SessionReleveController;
 use App\Http\Controllers\TypeDocumentController;
 use App\Http\Controllers\UserController;
 use App\Models\Document;
@@ -72,6 +76,17 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [DocumentController::class, 'index'])->name('index');
         Route::get('/creer', [DocumentController::class, 'create'])->name('create');
         Route::post('/', [DocumentController::class, 'store'])->name('store');
+        // Avant les routes `{document}` ci-dessous : "corbeille" ne doit
+        // jamais être interprété comme un id de document.
+        Route::delete('/corbeille/vider', [DocumentController::class, 'viderCorbeille'])->name('corbeille.vider');
+        // Actions groupées (sélection multiple via cases à cocher, voir
+        // resources/views/gestion/documents/index.blade.php) — en POST,
+        // jamais DELETE : un même <form> partage plusieurs boutons de
+        // soumission avec des `formaction` différents, et HTML ne connaît
+        // pas de `formmethod="delete"`.
+        Route::post('/corbeille-groupee', [DocumentController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
+        Route::post('/corbeille/restaurer-groupe', [DocumentController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
+        Route::post('/corbeille/definitivement-groupe', [DocumentController::class, 'forceDestroyGroupe'])->name('corbeille.force-destroy-groupe');
         Route::get('/{document}/modifier', [DocumentController::class, 'edit'])->name('edit');
         Route::put('/{document}', [DocumentController::class, 'update'])->name('update');
         Route::delete('/{document}', [DocumentController::class, 'destroy'])->name('destroy');
@@ -83,6 +98,72 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/{document}/restaurer', [DocumentController::class, 'restore'])->name('restore');
         Route::delete('/{document}/definitivement', [DocumentController::class, 'forceDestroy'])->name('force-destroy');
         Route::post('/{document}/basculer-retrait', [DocumentController::class, 'basculerRetrait'])->name('basculer-retrait');
+    });
+
+    // Gestion des PV de délibération — structure dédiée (voir le docblock de
+    // App\Http\Controllers\SessionDeliberationController), remplace le simple
+    // "un document = un fichier" utilisé jusqu'ici pour ce type. Chaque
+    // fichier déposé (note d'information, PV par semestre/année de thèse)
+    // reste un App\Models\Document ordinaire, d'où les deux sous-routes
+    // `fichiers/{fichier}` qui délèguent le dépôt/retrait à ce contrôleur
+    // plutôt qu'à DocumentController.
+    Route::prefix('sessions-deliberation')->name('sessions-deliberation.')->group(function () {
+        Route::get('/', [SessionDeliberationController::class, 'index'])->name('index');
+        Route::get('/creer', [SessionDeliberationController::class, 'create'])->name('create');
+        Route::post('/', [SessionDeliberationController::class, 'store'])->name('store');
+        Route::get('/{sessionDeliberation}', [SessionDeliberationController::class, 'show'])->name('show');
+        Route::put('/{sessionDeliberation}', [SessionDeliberationController::class, 'update'])->name('update');
+        Route::delete('/{sessionDeliberation}', [SessionDeliberationController::class, 'destroy'])->name('destroy');
+        // Non typés (int), comme les autres restaurer/définitivement : la
+        // liaison de route implicite exclut les enregistrements corbeillés.
+        Route::post('/{sessionDeliberation}/restaurer', [SessionDeliberationController::class, 'restore'])->name('restore');
+        Route::delete('/{sessionDeliberation}/definitivement', [SessionDeliberationController::class, 'forceDestroy'])->name('force-destroy');
+        Route::post('/{sessionDeliberation}/fichiers/{fichier}', [SessionDeliberationController::class, 'uploaderFichier'])->name('fichiers.store');
+        Route::delete('/{sessionDeliberation}/fichiers/{fichier}', [SessionDeliberationController::class, 'supprimerFichier'])->name('fichiers.destroy');
+    });
+
+    // Gestion des Relevés de notes — MIROIR volontaire du groupe
+    // "sessions-deliberation" ci-dessus (voir le docblock de
+    // App\Http\Controllers\SessionReleveController), "même chose que pour le
+    // PV de délibération" sur demande explicite du client.
+    Route::prefix('sessions-releves')->name('sessions-releves.')->group(function () {
+        Route::get('/', [SessionReleveController::class, 'index'])->name('index');
+        Route::get('/creer', [SessionReleveController::class, 'create'])->name('create');
+        Route::post('/', [SessionReleveController::class, 'store'])->name('store');
+        Route::get('/{sessionReleve}', [SessionReleveController::class, 'show'])->name('show');
+        Route::put('/{sessionReleve}', [SessionReleveController::class, 'update'])->name('update');
+        Route::delete('/{sessionReleve}', [SessionReleveController::class, 'destroy'])->name('destroy');
+        Route::post('/{sessionReleve}/restaurer', [SessionReleveController::class, 'restore'])->name('restore');
+        Route::delete('/{sessionReleve}/definitivement', [SessionReleveController::class, 'forceDestroy'])->name('force-destroy');
+        Route::post('/{sessionReleve}/fichiers/{fichier}', [SessionReleveController::class, 'uploaderFichier'])->name('fichiers.store');
+        Route::delete('/{sessionReleve}/fichiers/{fichier}', [SessionReleveController::class, 'supprimerFichier'])->name('fichiers.destroy');
+    });
+
+    // Gestion des PV de soutenance — structure dédiée (demande explicite du
+    // client, à partir d'un exemple de registre papier), voir le docblock de
+    // App\Http\Controllers\PvSoutenanceController. Contrairement aux deux
+    // groupes ci-dessus, UN enregistrement = UN étudiant (pas une filière
+    // entière pour une session), d'où une route `/{pvSoutenance}/modifier`
+    // classique en plus (tous les champs restent modifiables ici, voir le
+    // docblock de update() sur le contrôleur).
+    Route::prefix('pv-soutenances')->name('pv-soutenances.')->group(function () {
+        Route::get('/', [PvSoutenanceController::class, 'index'])->name('index');
+        Route::get('/creer', [PvSoutenanceController::class, 'create'])->name('create');
+        Route::post('/', [PvSoutenanceController::class, 'store'])->name('store');
+        Route::get('/{pvSoutenance}', [PvSoutenanceController::class, 'show'])->name('show');
+        Route::get('/{pvSoutenance}/modifier', [PvSoutenanceController::class, 'edit'])->name('edit');
+        Route::put('/{pvSoutenance}', [PvSoutenanceController::class, 'update'])->name('update');
+        Route::delete('/{pvSoutenance}', [PvSoutenanceController::class, 'destroy'])->name('destroy');
+        Route::post('/{pvSoutenance}/restaurer', [PvSoutenanceController::class, 'restore'])->name('restore');
+        Route::delete('/{pvSoutenance}/definitivement', [PvSoutenanceController::class, 'forceDestroy'])->name('force-destroy');
+        Route::post('/{pvSoutenance}/fichiers/{fichier}', [PvSoutenanceController::class, 'uploaderFichier'])->name('fichiers.store');
+        Route::delete('/{pvSoutenance}/fichiers/{fichier}', [PvSoutenanceController::class, 'supprimerFichier'])->name('fichiers.destroy');
+        // Retrait PHYSIQUE du diplôme — qui est venu le chercher et quand
+        // (demande explicite du client), voir le docblock de
+        // PvSoutenanceController::enregistrerRetraitDiplome(). Rattaché au PV
+        // lui-même (pas à une case), voir le docblock d'App\Models\PvSoutenance.
+        Route::post('/{pvSoutenance}/retrait-diplome', [PvSoutenanceController::class, 'enregistrerRetraitDiplome'])->name('retrait-diplome.store');
+        Route::delete('/{pvSoutenance}/retrait-diplome', [PvSoutenanceController::class, 'annulerRetraitDiplome'])->name('retrait-diplome.destroy');
     });
 
     // Une page par type de document "épinglé" (voir
@@ -133,6 +214,24 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
             Route::put('/{sousType}', [TypeDocumentController::class, 'updateSousType'])->name('update');
             Route::delete('/{sousType}', [TypeDocumentController::class, 'destroySousType'])->name('destroy');
         });
+    });
+
+    // Champs supplémentaires — documents propres ajoutables aux PV de
+    // délibération et/ou aux Relevés de notes depuis l'administration, sans
+    // toucher au code (voir le docblock de
+    // App\Http\Controllers\ChampSupplementaireController). `{id}` non typé
+    // sur restaurer/supprimer définitivement, comme pour les autres
+    // référentiels (voir plus haut) : la liaison de route implicite exclut
+    // les enregistrements corbeillés par défaut.
+    Route::prefix('champs-supplementaires')->name('champs-supplementaires.')->group(function () {
+        Route::get('/', [ChampSupplementaireController::class, 'index'])->name('index');
+        Route::get('/creer', [ChampSupplementaireController::class, 'create'])->name('create');
+        Route::post('/', [ChampSupplementaireController::class, 'store'])->name('store');
+        Route::get('/{champSupplementaire}/modifier', [ChampSupplementaireController::class, 'edit'])->name('edit');
+        Route::put('/{champSupplementaire}', [ChampSupplementaireController::class, 'update'])->name('update');
+        Route::delete('/{champSupplementaire}', [ChampSupplementaireController::class, 'destroy'])->name('destroy');
+        Route::post('/{id}/restaurer', [ChampSupplementaireController::class, 'restore'])->name('restore');
+        Route::delete('/{id}/definitivement', [ChampSupplementaireController::class, 'forceDestroy'])->name('force-destroy');
     });
 
     // Réglages de la plateforme — une seule ligne en base, réservée en dur au
@@ -202,6 +301,32 @@ Route::middleware(['web', 'auth'])
         return Storage::disk('documents')->download($document->chemin, $document->nom_original);
     })
     ->name('documents.telecharger');
+
+/*
+|--------------------------------------------------------------------------
+| Aperçu d'un document (ouverture dans un nouvel onglet, sans téléchargement)
+|--------------------------------------------------------------------------
+|
+| Même contrôle d'accès que le téléchargement ci-dessus, mais avec
+| "Content-Disposition: inline" (comportement par défaut de
+| Storage::response(), contrairement à Storage::download() qui force
+| "attachment") — demande explicite du client : pouvoir consulter un PDF/une
+| image directement dans le navigateur plutôt que d'avoir à d'abord le
+| télécharger. Pour un type que le navigateur ne sait pas afficher (.docx,
+| .xlsx...), le navigateur retombe de lui-même sur un téléchargement — rien
+| à gérer ici de ce côté.
+*/
+Route::middleware(['web', 'auth'])
+    ->get('/documents/{document}/voir', function (int $document): StreamedResponse {
+        abort_unless(ResourceAccess::can('documents', 'view'), 403);
+
+        $document = Document::withTrashed()->findOrFail($document);
+
+        abort_unless(Storage::disk('documents')->exists($document->chemin), 404);
+
+        return Storage::disk('documents')->response($document->chemin, $document->nom_original);
+    })
+    ->name('documents.voir');
 
 /*
 |--------------------------------------------------------------------------

@@ -2,13 +2,9 @@
 
 namespace App\Models;
 
-use Filament\Models\Contracts\FilamentUser;
-use Filament\Models\Contracts\HasAvatar;
-use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Repris du projet ingridd-platform, adapté à 3 rôles au lieu de 4 (plus de
@@ -23,7 +19,7 @@ use Illuminate\Support\Facades\Storage;
  * `roles` est momentanément vide ou mal configurée (voir ROLE_ADMIN, jamais
  * bloqué par les permissions stockées en base).
  */
-class User extends Authenticatable implements FilamentUser, HasAvatar
+class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
@@ -60,23 +56,30 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         ];
     }
 
-    public function canAccessPanel(Panel $panel): bool
-    {
-        return true;
-    }
-
-    /** Photo de profil réelle si elle existe, sinon Filament revient automatiquement aux initiales. */
-    public function getFilamentAvatarUrl(): ?string
-    {
-        return $this->avatar ? Storage::disk('public')->url($this->avatar) : null;
-    }
-
+    /**
+     * Libellés affichés (ex. badge de rôle dans la topbar, voir
+     * resources/views/layouts/gestion.blade.php) pour les rôles connus du
+     * code. Les cinq rôles "organisation" (Direction, Secrétariat,
+     * Comptabilité, Patrimoine, Chargées de cours — voir
+     * database/seeders/RoleSeeder.php) n'ont pas de constante ROLE_* dédiée
+     * ici : contrairement à ROLE_ADMIN (seul rôle avec un traitement à part
+     * dans le code, voir App\Support\ResourceAccess/RoleController/
+     * UserController), ce sont de simples lignes de App\Models\Role, comme
+     * n'importe quel rôle qu'un administrateur créerait lui-même depuis
+     * Rôles & permissions — ils restent listés ici uniquement pour un
+     * affichage plus lisible que leur slug brut.
+     */
     public static function libellesRoles(): array
     {
         return [
             self::ROLE_ADMIN => 'Administrateur',
             self::ROLE_GESTIONNAIRE => 'Gestionnaire',
             self::ROLE_CONSULTATION => 'Consultation',
+            'direction' => 'Direction',
+            'secretariat' => 'Secrétariat',
+            'comptabilite' => 'Comptabilité',
+            'patrimoine' => 'Patrimoine',
+            'chargees_cours' => 'Chargées de cours',
         ];
     }
 }

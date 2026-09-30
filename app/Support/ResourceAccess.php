@@ -27,10 +27,14 @@ class ResourceAccess
 {
     public const RESSOURCES = [
         'documents' => 'Documents',
+        'sessions_deliberation' => 'PV de délibération',
+        'sessions_releves' => 'Relevés de notes',
+        'pv_soutenances' => 'PV de soutenance',
         'types_documents' => 'Types de documents',
         'filieres' => 'Filières',
         'niveaux' => 'Niveaux',
         'annees_academiques' => 'Années académiques',
+        'champs_supplementaires' => 'Champs supplémentaires',
         // Historique : toujours en lecture seule pour tout le monde, même
         // "admin" — seul le droit "Voir" a un effet ici (voir AuditLogResource).
         'audit_logs' => 'Historique (audit)',
@@ -51,10 +55,14 @@ class ResourceAccess
      */
     public const ICONES = [
         'documents' => 'heroicon-o-document-text',
+        'sessions_deliberation' => 'heroicon-o-clipboard-document-check',
+        'sessions_releves' => 'heroicon-o-document-chart-bar',
+        'pv_soutenances' => 'heroicon-o-academic-cap',
         'types_documents' => 'heroicon-o-tag',
         'filieres' => 'heroicon-o-academic-cap',
         'niveaux' => 'heroicon-o-bars-arrow-up',
         'annees_academiques' => 'heroicon-o-calendar-days',
+        'champs_supplementaires' => 'heroicon-o-document-plus',
         'audit_logs' => 'heroicon-o-clock',
     ];
 

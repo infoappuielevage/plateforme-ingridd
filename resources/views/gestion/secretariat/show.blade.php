@@ -162,6 +162,9 @@
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">
                                 @if (! $corbeille)
+                                    <a href="{{ route('documents.voir', $document) }}" target="_blank" rel="noopener" class="btn btn-outline-secondary" title="Voir">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
                                     <a href="{{ route('documents.telecharger', $document) }}" class="btn btn-outline-secondary" title="Télécharger">
                                         <i class="bi bi-download"></i>
                                     </a>

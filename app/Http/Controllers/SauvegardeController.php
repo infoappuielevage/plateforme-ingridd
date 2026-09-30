@@ -40,11 +40,42 @@ class SauvegardeController extends Controller
     {
         abort_unless(Auth::user()?->role === User::ROLE_ADMIN, 403);
 
-        $code = Artisan::call('ingridd:sauvegarde');
+        // La commande elle-même filtre déjà tout Throwable (voir
+        // CreerSauvegarde::handle()) ; ce try/catch est une seconde
+        // barrière, au cas où quelque chose échouerait avant même d'y
+        // entrer (bootstrap d'Artisan::call()) — jamais laisser une
+        // exception non gérée remonter jusqu'ici : elle produirait une
+        // erreur 500 invisible pour l'utilisateur (voir le docblock de la
+        // classe et celui de CreerSauvegarde).
+        try {
+            $code = Artisan::call('ingridd:sauvegarde');
+        } catch (\Throwable $exception) {
+            report($exception);
 
-        return $code === 0
-            ? back()->with('succes', 'Sauvegarde créée.')
-            : back()->withErrors(['sauvegarde' => 'Échec de la création de la sauvegarde.']);
+            return back()->withErrors([
+                'sauvegarde' => 'Erreur inattendue : '.$exception->getMessage(),
+            ]);
+        }
+
+        if ($code === 0) {
+            return back()->with('succes', 'Sauvegarde créée.');
+        }
+
+        // La commande explique déjà précisément la cause de l'échec (extension
+        // "zip" absente, mysqldump introuvable, base SQLite manquante...) via
+        // ses propres appels $this->error()/$this->warn() — mais ceux-ci ne
+        // partaient jusqu'ici que dans le buffer console d'Artisan::call(),
+        // invisible depuis le navigateur : l'écran affichait un message
+        // générique sans aucun indice pour diagnostiquer. On relaie donc ici
+        // cette sortie telle quelle, plutôt que de la remplacer par un texte
+        // fixe qui masquerait la vraie raison.
+        $sortie = trim(Artisan::output());
+
+        return back()->withErrors([
+            'sauvegarde' => $sortie !== ''
+                ? "Échec de la création de la sauvegarde : {$sortie}"
+                : 'Échec de la création de la sauvegarde.',
+        ]);
     }
 
     public function destroy(string $nom): RedirectResponse

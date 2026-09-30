@@ -15,6 +15,11 @@ use Illuminate\Database\Seeder;
  * complétable depuis Administration > Référentiels > Types de documents >
  * (ouvrir un type) > Sous-types, sans toucher au code.
  *
+ * `RELEVE_NOTES` (Licence/Master) s'ajoute au même titre que
+ * `PV_DELIBERATION` (déjà Licence/Master) — deux types distincts du
+ * référentiel, chacun avec ses propres sous-types du même nom : aucun lien
+ * entre les deux, une simple coïncidence de libellé.
+ *
  * `updateOrCreate(['type_document_id' => ..., 'libelle' => ...], [...])` —
  * jamais de `delete()` — idempotent comme le reste des seeders du projet.
  * Si un type listé ci-dessous n'existe pas (référentiel pas encore seedé,
@@ -35,6 +40,7 @@ class SousTypeDocumentSeeder extends Seeder
             'BILAN_COURS_LIGNE' => ['En ligne', 'En présentiel'],
             'BORDEREAU' => ['BNSP', 'CNSS', 'Coris Banque', 'FONER', 'Ministère', 'UNB'],
             'PV_DELIBERATION' => ['Licence', 'Master'],
+            'RELEVE_NOTES' => ['Licence', 'Master'],
         ];
 
         foreach ($sousTypesParType as $codeType => $libelles) {

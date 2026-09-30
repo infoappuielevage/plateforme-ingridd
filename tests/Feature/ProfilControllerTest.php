@@ -95,6 +95,18 @@ class ProfilControllerTest extends TestCase
         Storage::disk('public')->assertMissing('avatars/ancien.png');
     }
 
+    /**
+     * "nouveau-mot-de-passe" (tout en minuscules, sans chiffre) ne suffirait
+     * pas : App\Providers\AppServiceProvider impose min 10 caractères +
+     * casse mixte + au moins un chiffre à TOUT mot de passe, y compris en
+     * environnement de test (seul ->uncompromised() — l'appel réseau vers
+     * l'API "Have I Been Pwned" — est réservé à la production). Un mot de
+     * passe non conforme ici ferait échouer la validation sur
+     * nouveau_mot_de_passe en plus de mot_de_passe_actuel, ce qui n'est pas
+     * ce que ces tests veulent vérifier.
+     */
+    private const NOUVEAU_MOT_DE_PASSE_VALIDE = 'NouveauMotDePasse123';
+
     public function test_le_mot_de_passe_actuel_est_exige_pour_changer_de_mot_de_passe(): void
     {
         $utilisateur = User::factory()->create(['password' => Hash::make('ancien-mot-de-passe')]);
@@ -103,8 +115,8 @@ class ProfilControllerTest extends TestCase
             ->put(route('gestion.profil.update'), [
                 'name' => $utilisateur->name,
                 'email' => $utilisateur->email,
-                'nouveau_mot_de_passe' => 'nouveau-mot-de-passe',
-                'nouveau_mot_de_passe_confirmation' => 'nouveau-mot-de-passe',
+                'nouveau_mot_de_passe' => self::NOUVEAU_MOT_DE_PASSE_VALIDE,
+                'nouveau_mot_de_passe_confirmation' => self::NOUVEAU_MOT_DE_PASSE_VALIDE,
             ])
             ->assertSessionHasErrors('mot_de_passe_actuel');
 
@@ -120,12 +132,12 @@ class ProfilControllerTest extends TestCase
                 'name' => $utilisateur->name,
                 'email' => $utilisateur->email,
                 'mot_de_passe_actuel' => 'ancien-mot-de-passe',
-                'nouveau_mot_de_passe' => 'nouveau-mot-de-passe',
-                'nouveau_mot_de_passe_confirmation' => 'nouveau-mot-de-passe',
+                'nouveau_mot_de_passe' => self::NOUVEAU_MOT_DE_PASSE_VALIDE,
+                'nouveau_mot_de_passe_confirmation' => self::NOUVEAU_MOT_DE_PASSE_VALIDE,
             ])
             ->assertRedirect(route('gestion.profil.edit'));
 
-        $this->assertTrue(Hash::check('nouveau-mot-de-passe', $utilisateur->fresh()->password));
+        $this->assertTrue(Hash::check(self::NOUVEAU_MOT_DE_PASSE_VALIDE, $utilisateur->fresh()->password));
     }
 
     public function test_un_mauvais_mot_de_passe_actuel_est_refuse(): void
@@ -137,8 +149,8 @@ class ProfilControllerTest extends TestCase
                 'name' => $utilisateur->name,
                 'email' => $utilisateur->email,
                 'mot_de_passe_actuel' => 'mauvais-mot-de-passe',
-                'nouveau_mot_de_passe' => 'nouveau-mot-de-passe',
-                'nouveau_mot_de_passe_confirmation' => 'nouveau-mot-de-passe',
+                'nouveau_mot_de_passe' => self::NOUVEAU_MOT_DE_PASSE_VALIDE,
+                'nouveau_mot_de_passe_confirmation' => self::NOUVEAU_MOT_DE_PASSE_VALIDE,
             ])
             ->assertSessionHasErrors('mot_de_passe_actuel');
 

@@ -132,6 +132,12 @@ h1.h3::after {
     box-shadow: 0 3px 10px rgba(28, 78, 128, .28);
 }
 
+.sidebar-link-toggle .sidebar-chevron { margin-left: auto; font-size: .7rem; transition: transform .15s ease; }
+.sidebar-link-toggle[aria-expanded="true"] .sidebar-chevron { transform: rotate(180deg); }
+.sidebar-sublink { padding-left: 2.35rem; font-weight: 500; font-size: .86rem; }
+.app-sidebar.is-collapsed .sidebar-sublink,
+.app-sidebar.is-collapsed .sidebar-link-toggle .sidebar-chevron { display: none; }
+
 .sidebar-footer { padding: .8rem 1rem; border-top: 1px solid var(--ingridd-border); }
 .sidebar-collapse-btn {
     width: 100%; border: none; background: transparent; color: #98a2b3;

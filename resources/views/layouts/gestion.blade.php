@@ -54,7 +54,14 @@
     $elementsSecretariat = collect();
 
     if (\App\Support\ResourceAccess::can('documents', 'view')) {
-        foreach (\App\Models\TypeDocument::query()->where('epingle_secretariat', true)->orderBy('ordre')->get() as $typeEpingle) {
+        // `actif` en plus de `epingle_secretariat` (même filtre que
+        // App\Support\MenuDocuments pour le sous-menu "Types de documents")
+        // : désactiver un type depuis Administration > Référentiels > Types
+        // de documents doit aussi faire disparaître son raccourci
+        // Secrétariat, pas seulement l'empêcher d'apparaître pour un NOUVEAU
+        // document — sinon le raccourci resterait affiché pour un type que
+        // le client a justement dit ne plus vouloir voir "pour le moment".
+        foreach (\App\Models\TypeDocument::query()->where('epingle_secretariat', true)->where('actif', true)->orderBy('ordre')->get() as $typeEpingle) {
             $sousTypesActifs = $typeEpingle->champs_diplome_actifs
                 ? $typeEpingle->sousTypes()->where('actif', true)->get()
                 : collect();
@@ -88,11 +95,23 @@
     // autres partagent App\Http\Controllers\ReferentielController — d'où le
     // slug de route ("referentiel") parfois différent de la clé
     // ResourceAccess ("annees-academiques" vs "annees_academiques").
+    // Sous-menu "Types de documents" (sous "Documents" ci-dessous) : voir
+    // App\Support\MenuDocuments pour la construction complète (regroupements
+    // visuels type "PV", seau "Autres types"...). Différent du menu
+    // "Secrétariat" ci-dessus (qui ne montre que les types épinglés, et ne
+    // déplie que ceux ayant les champs "Diplôme" actifs) : ici, TOUS les
+    // types actifs apparaissent — deux usages différents (accès rapide
+    // "guichet" vs navigation complète du référentiel), pas une duplication.
+    $menuTypesDocuments = \App\Support\ResourceAccess::can('documents', 'view')
+        ? \App\Support\MenuDocuments::elements()
+        : collect();
+
     $elementsReferentiels = collect([
         ['cle' => 'types_documents', 'icone' => 'bi-tags-fill', 'label' => 'Types de documents', 'url' => route('gestion.types-documents.index'), 'actif' => request()->routeIs('gestion.types-documents.*')],
         ['cle' => 'filieres', 'icone' => 'bi-diagram-3-fill', 'label' => 'Filières', 'url' => route('gestion.referentiels.index', ['referentiel' => 'filieres']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'filieres'],
         ['cle' => 'niveaux', 'icone' => 'bi-bar-chart-steps', 'label' => 'Niveaux', 'url' => route('gestion.referentiels.index', ['referentiel' => 'niveaux']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'niveaux'],
         ['cle' => 'annees_academiques', 'icone' => 'bi-calendar-range-fill', 'label' => 'Années académiques', 'url' => route('gestion.referentiels.index', ['referentiel' => 'annees-academiques']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'annees-academiques'],
+        ['cle' => 'champs_supplementaires', 'icone' => 'bi-file-earmark-plus-fill', 'label' => 'Champs supplémentaires', 'url' => route('gestion.champs-supplementaires.index'), 'actif' => request()->routeIs('gestion.champs-supplementaires.*')],
     ])->filter(fn (array $ref) => \App\Support\ResourceAccess::can($ref['cle'], 'view'));
 @endphp
 
@@ -124,6 +143,47 @@
                     <i class="bi bi-trash3-fill"></i><span class="sidebar-label">Corbeille</span>
                 </a>
             @endif
+
+            @if (\App\Support\ResourceAccess::can('sessions_deliberation', 'view'))
+                <a href="{{ route('gestion.sessions-deliberation.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sessions-deliberation.*') ? 'active' : '' }}" title="PV de délibération">
+                    <i class="bi bi-clipboard2-check-fill"></i><span class="sidebar-label">PV de délibération</span>
+                </a>
+            @endif
+
+            @if (\App\Support\ResourceAccess::can('sessions_releves', 'view'))
+                <a href="{{ route('gestion.sessions-releves.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sessions-releves.*') ? 'active' : '' }}" title="Relevés de notes">
+                    <i class="bi bi-journal-text"></i><span class="sidebar-label">Relevés de notes</span>
+                </a>
+            @endif
+
+            @if (\App\Support\ResourceAccess::can('pv_soutenances', 'view'))
+                <a href="{{ route('gestion.pv-soutenances.index') }}" class="sidebar-link {{ request()->routeIs('gestion.pv-soutenances.*') ? 'active' : '' }}" title="PV de soutenance">
+                    <i class="bi bi-mortarboard-fill"></i><span class="sidebar-label">PV de soutenance</span>
+                </a>
+            @endif
+
+            @foreach ($menuTypesDocuments as $groupe)
+                <a href="#sidebarMenu{{ $groupe['cle'] }}" class="sidebar-link sidebar-link-toggle {{ $groupe['actifType'] ? 'active' : '' }}"
+                   data-bs-toggle="collapse" role="button"
+                   aria-expanded="{{ $groupe['actifType'] ? 'true' : 'false' }}" aria-controls="sidebarMenu{{ $groupe['cle'] }}"
+                   title="{{ $groupe['libelle'] }}">
+                    <i class="bi {{ $groupe['icone'] }}"></i>
+                    <span class="sidebar-label">{{ $groupe['libelle'] }}</span>
+                    <i class="bi bi-chevron-down sidebar-chevron"></i>
+                </a>
+                <div class="collapse {{ $groupe['actifType'] ? 'show' : '' }}" id="sidebarMenu{{ $groupe['cle'] }}">
+                    @if ($groupe['urlType'])
+                        <a href="{{ $groupe['urlType'] }}" class="sidebar-link sidebar-sublink {{ $groupe['actifType'] && ! request()->filled('sous_type_document_id') ? 'active' : '' }}" title="Tous — {{ $groupe['libelle'] }}">
+                            <span class="sidebar-label">Tous</span>
+                        </a>
+                    @endif
+                    @foreach ($groupe['enfants'] as $enfant)
+                        <a href="{{ $enfant['url'] }}" class="sidebar-link sidebar-sublink {{ $enfant['actif'] ? 'active' : '' }}" title="{{ $enfant['libelle'] }}">
+                            <span class="sidebar-label">{{ $enfant['libelle'] }}</span>
+                        </a>
+                    @endforeach
+                </div>
+            @endforeach
 
             @if ($elementsSecretariat->isNotEmpty())
                 <div class="sidebar-group-label">Secrétariat</div>
@@ -256,6 +316,16 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     document.addEventListener('submit', function (e) {
+        // e.defaultPrevented : un formulaire avec onsubmit="return confirm(...)"
+        // (voir "Créer une sauvegarde"/"Supprimer" un peu partout) déclenche
+        // quand même cet événement "submit" même quand l'utilisateur clique sur
+        // "Annuler" — seule la soumission réelle est bloquée (return false),
+        // pas l'événement lui-même, qui continue de remonter jusqu'ici. Sans
+        // cette vérification, le bouton passait en "Veuillez patienter..." et
+        // y restait indéfiniment (aucune navigation ne survient jamais pour le
+        // réinitialiser) alors que rien n'avait été envoyé au serveur.
+        if (e.defaultPrevented) return;
+
         const form = e.target;
         if (form.method && form.method.toLowerCase() === 'get') return;
         const btn = form.querySelector('button[type="submit"]');

@@ -25,6 +25,9 @@
 # Exports générés à la demande (CSV de l'historique avant purge, etc.) :
 # peuvent contenir des données personnelles, jamais à suivre dans Git.
 /storage/app/private/exports
+# Export/dump de base de données local, potentiellement avec des données
+# réelles d'étudiants (noms, numéros de PV...) — jamais à suivre dans Git.
+/test.sql
 /vendor
 _ide_helper.php
 Homestead.json
