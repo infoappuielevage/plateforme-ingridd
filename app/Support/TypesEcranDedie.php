@@ -17,15 +17,19 @@ use App\Models\TypeDocument;
  *
  * Liste FIXE de codes, contrairement à App\Support\TypesDiplome/
  * TypesPvSoutenance (qui lisent une colonne configurable de TypeDocument) :
- * "avoir un écran dédié" est un fait du CODE (ces trois contrôleurs
+ * "avoir un écran dédié" est un fait du CODE (ces quatre contrôleurs
  * existent réellement), pas un comportement qu'un administrateur peut
  * activer sur un type quelconque depuis l'administration — voir le docblock
  * de database/seeders/TypeDocumentSeeder.php pour le contexte complet du
  * nettoyage ("plus de doublons ailleurs que l'écran dédié").
+ *
+ * PV_REUNION a rejoint cette liste avec App\Http\Controllers\
+ * ReunionController ("avançons sur le PV des réunions") — mêmes raisons que
+ * les trois premiers.
  */
 class TypesEcranDedie
 {
-    public const CODES = ['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES'];
+    public const CODES = ['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'PV_REUNION'];
 
     /**
      * Les id des types concernés — peut être un tableau vide sur une base

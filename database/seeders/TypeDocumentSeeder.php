@@ -91,19 +91,22 @@ use Illuminate\Database\Seeder;
  * Menu allégé (demande explicite du client, "trop d'éléments dont on a plus
  * besoin pour le moment... on reconstruira au fur et à mesure qu'on
  * avance") : sur une INSTALLATION NEUVE, seuls `PV_SOUTENANCE`,
- * `PV_DELIBERATION`, `RELEVE_NOTES` (les trois écrans dédiés déjà
+ * `PV_DELIBERATION`, `RELEVE_NOTES`, `PV_REUNION` (les écrans dédiés déjà
  * construits) et `AUTRE` (filet de sécurité, voir plus haut) sont créés
  * `actif = true` — voir CODES_ACTIFS_PAR_DEFAUT ci-dessous. Sur la base déjà
  * en service, ce même changement a été appliqué une fois pour toutes par la
  * migration 2026_10_06_000001_desactiver_types_document_non_prioritaires
- * (voir son docblock) plutôt qu'ici : une fois une ligne créée, `actif`
- * n'est PLUS JAMAIS réécrit par ce seeder (voir `run()` ci-dessous) — sinon
- * rejouer ce seeder lors d'un futur déploiement annulerait en silence une
- * réactivation faite entre-temps par le client depuis Administration >
- * Référentiels > Types de documents. Tous les autres types restent
- * entièrement définis dans `$types` ci-dessous (rien n'est supprimé de la
- * liste recensée par le client), juste invisibles pour l'instant dans les
- * menus et le formulaire de création tant qu'ils ne sont pas réactivés.
+ * (voir son docblock) plutôt qu'ici — et, pour `PV_REUNION` seul (arrivé
+ * plus tard, avec App\Http\Controllers\ReunionController), par la migration
+ * 2026_10_07_000003_activer_pv_reunion qui le réactive à son tour — : une
+ * fois une ligne créée, `actif` n'est PLUS JAMAIS réécrit par ce seeder
+ * (voir `run()` ci-dessous) — sinon rejouer ce seeder lors d'un futur
+ * déploiement annulerait en silence une réactivation faite entre-temps par
+ * le client depuis Administration > Référentiels > Types de documents.
+ * Tous les autres types restent entièrement définis dans `$types`
+ * ci-dessous (rien n'est supprimé de la liste recensée par le client),
+ * juste invisibles pour l'instant dans les menus et le formulaire de
+ * création tant qu'ils ne sont pas réactivés.
  */
 class TypeDocumentSeeder extends Seeder
 {
@@ -132,7 +135,7 @@ class TypeDocumentSeeder extends Seeder
      * est prêt, sans jamais avoir besoin de revenir modifier autre chose
      * dans ce fichier.
      */
-    protected const CODES_ACTIFS_PAR_DEFAUT = ['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'AUTRE'];
+    protected const CODES_ACTIFS_PAR_DEFAUT = ['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'PV_REUNION', 'AUTRE'];
 
     public function run(): void
     {
@@ -153,7 +156,7 @@ class TypeDocumentSeeder extends Seeder
             ['code' => 'NOTICE_RENSEIGNEMENT', 'libelle' => 'Notice de renseignement', 'ordre' => 14],
             ['code' => 'ORDRE_MISSION', 'libelle' => 'Ordre de mission', 'ordre' => 15],
             ['code' => 'RELEVE_NOTES', 'libelle' => 'Relevés de notes', 'ordre' => 16],
-            ['code' => 'PV_REUNION', 'libelle' => 'PV réunions', 'ordre' => 17],
+            ['code' => 'PV_REUNION', 'libelle' => 'PV de réunion', 'ordre' => 17],
             ['code' => 'SYLLABUS_FILIERES', 'libelle' => 'Syllabus des filières', 'ordre' => 18],
             ['code' => 'UNUPEL', 'libelle' => 'UNUPEL', 'ordre' => 19],
             ['code' => 'CANEVAS_RAPPORT_RENTREE', 'libelle' => 'Canevas de rapport de rentrée', 'ordre' => 20],

@@ -25,6 +25,20 @@ class FamillesDocumentTest extends TestCase
         $this->assertSame(['DIPLOME', 'ATTESTATION', 'LISTE_DIPLOME'], FamillesDocument::codesPour('diplomes_attestations'));
     }
 
+    /**
+     * PV_REUNION a rejoint l'onglet "Gouvernance" en même temps que son écran
+     * dédié (voir App\Http\Controllers\ReunionController) — regroupement
+     * INDÉPENDANT de "avoir un écran dédié" (voir le docblock de
+     * App\Support\TypesEcranDedie : "deux usages différents, pas une
+     * duplication"), donc aucun changement de ce côté n'était requis ; ce
+     * test le vérifie explicitement plutôt que de compter uniquement sur
+     * test_aucun_code_nappartient_a_deux_familles ci-dessous.
+     */
+    public function test_pv_reunion_reste_dans_longlet_gouvernance(): void
+    {
+        $this->assertContains('PV_REUNION', FamillesDocument::codesPour('gouvernance'));
+    }
+
     public function test_codes_pour_tous_est_null(): void
     {
         $this->assertNull(FamillesDocument::codesPour('tous'));

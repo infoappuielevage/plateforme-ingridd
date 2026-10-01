@@ -9,6 +9,7 @@ use App\Http\Controllers\ParametresController;
 use App\Http\Controllers\ProfilController;
 use App\Http\Controllers\PvSoutenanceController;
 use App\Http\Controllers\ReferentielController;
+use App\Http\Controllers\ReunionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SauvegardeController;
 use App\Http\Controllers\SecretariatController;
@@ -164,6 +165,30 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         // lui-même (pas à une case), voir le docblock d'App\Models\PvSoutenance.
         Route::post('/{pvSoutenance}/retrait-diplome', [PvSoutenanceController::class, 'enregistrerRetraitDiplome'])->name('retrait-diplome.store');
         Route::delete('/{pvSoutenance}/retrait-diplome', [PvSoutenanceController::class, 'annulerRetraitDiplome'])->name('retrait-diplome.destroy');
+    });
+
+    // Gestion des PV de réunion — structure dédiée (demande explicite du
+    // client, "avançons sur le PV des réunions"), voir le docblock de
+    // App\Http\Controllers\ReunionController. Comme PvSoutenanceController,
+    // TOUS les champs restent modifiables après création, d'où la route
+    // `/{reunion}/modifier` classique. Contrairement aux trois groupes
+    // ci-dessus, deux sous-routes fichiers distinctes : `rapport` (case fixe
+    // unique) et `pieces-jointes` (liste en nombre libre, voir le docblock
+    // du contrôleur).
+    Route::prefix('reunions')->name('reunions.')->group(function () {
+        Route::get('/', [ReunionController::class, 'index'])->name('index');
+        Route::get('/creer', [ReunionController::class, 'create'])->name('create');
+        Route::post('/', [ReunionController::class, 'store'])->name('store');
+        Route::get('/{reunion}', [ReunionController::class, 'show'])->name('show');
+        Route::get('/{reunion}/modifier', [ReunionController::class, 'edit'])->name('edit');
+        Route::put('/{reunion}', [ReunionController::class, 'update'])->name('update');
+        Route::delete('/{reunion}', [ReunionController::class, 'destroy'])->name('destroy');
+        Route::post('/{reunion}/restaurer', [ReunionController::class, 'restore'])->name('restore');
+        Route::delete('/{reunion}/definitivement', [ReunionController::class, 'forceDestroy'])->name('force-destroy');
+        Route::post('/{reunion}/rapport', [ReunionController::class, 'uploaderRapport'])->name('rapport.store');
+        Route::delete('/{reunion}/rapport', [ReunionController::class, 'supprimerRapport'])->name('rapport.destroy');
+        Route::post('/{reunion}/pieces-jointes', [ReunionController::class, 'ajouterPieceJointe'])->name('pieces-jointes.store');
+        Route::delete('/{reunion}/pieces-jointes/{fichier}', [ReunionController::class, 'supprimerPieceJointe'])->name('pieces-jointes.destroy');
     });
 
     // Une page par type de document "épinglé" (voir

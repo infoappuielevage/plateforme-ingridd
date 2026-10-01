@@ -162,6 +162,12 @@
                 </a>
             @endif
 
+            @if (\App\Support\ResourceAccess::can('reunions', 'view'))
+                <a href="{{ route('gestion.reunions.index') }}" class="sidebar-link {{ request()->routeIs('gestion.reunions.*') ? 'active' : '' }}" title="PV de réunion">
+                    <i class="bi bi-people-fill"></i><span class="sidebar-label">PV de réunion</span>
+                </a>
+            @endif
+
             @foreach ($menuTypesDocuments as $groupe)
                 <a href="#sidebarMenu{{ $groupe['cle'] }}" class="sidebar-link sidebar-link-toggle {{ $groupe['actifType'] ? 'active' : '' }}"
                    data-bs-toggle="collapse" role="button"

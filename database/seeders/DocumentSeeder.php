@@ -8,6 +8,8 @@ use App\Models\Filiere;
 use App\Models\Niveau;
 use App\Models\PvSoutenance;
 use App\Models\PvSoutenanceFichier;
+use App\Models\Reunion;
+use App\Models\ReunionFichier;
 use App\Models\SessionDeliberation;
 use App\Models\SessionDeliberationFichier;
 use App\Models\SessionReleve;
@@ -99,19 +101,23 @@ class DocumentSeeder extends Seeder
         $typeReleveNotes = TypeDocument::query()->where('code', 'RELEVE_NOTES')->first();
         $typeAttestation = TypeDocument::query()->where('code', 'ATTESTATION')->first();
         $typePvSoutenance = TypeDocument::query()->where('code', 'PV_SOUTENANCE')->first();
+        $typeReunion = TypeDocument::query()->where('code', 'PV_REUNION')->first();
         // Liste mise à jour après la refonte complète du référentiel des
         // types (voir TypeDocumentSeeder) : couvre tous les types
         // administratifs génériques restants (sans champs dédiés, sans
         // filière/niveau), pour que chaque page dédiée du menu "Secrétariat"
         // ait au moins quelques documents à montrer — SANS filtre `actif`,
         // pour la même raison que ci-dessus (la quasi-totalité de cette
-        // liste est désactivée par défaut depuis le "menu allégé").
+        // liste est désactivée par défaut depuis le "menu allégé"). PV_REUNION
+        // n'y figure plus : il a désormais son propre écran dédié (section
+        // 3ter bis ci-dessous), comme PV_SOUTENANCE/PV_DELIBERATION/
+        // RELEVE_NOTES avant lui.
         $typesGeneriques = TypeDocument::query()->whereIn('code', [
             'CONTRAT', 'COURRIER', 'CAHIER_PEDAGOGIQUE', 'CAHIER_CHARGE_MINISTERE',
             'DOSSIER_EXTENSION_FILIERE', 'CONSEIL_ETABLISSEMENT', 'CONSEIL_SCIENTIFIQUE',
             'CANDIDAT_BTS', 'NOTICE_RENSEIGNEMENT', 'ORDRE_MISSION', 'NOTE_INFORMATION',
             'ORGANIGRAMME', 'SPOT_TELE_RADIO', 'SYLLABUS_FILIERES', 'UNUPEL',
-            'LISTE_PERSONNEL', 'LISTE_DIPLOME', 'PV_REUNION', 'CANEVAS_RAPPORT_RENTREE', 'AUTRE',
+            'LISTE_PERSONNEL', 'LISTE_DIPLOME', 'CANEVAS_RAPPORT_RENTREE', 'AUTRE',
         ])->get();
 
         // Sous-types actifs, regroupés par code du type parent (voir
@@ -135,6 +141,7 @@ class DocumentSeeder extends Seeder
         $pvSoutenancesCreees = [];
         $sessionsDeliberationCreees = [];
         $sessionsReleveCreees = [];
+        $reunionsCreees = [];
 
         // --------------------------------------------------------------
         // 1) Un document "Liste des étudiants" par filière/niveau (année
@@ -442,6 +449,84 @@ class DocumentSeeder extends Seeder
         }
 
         // --------------------------------------------------------------
+        // 3quater) PV de réunion : un enregistrement par réunion — voir
+        // App\Models\Reunion (remplace, comme les trois volets précédents,
+        // l'ancien Document "à plat" pour ce type). Chacune a son rapport
+        // déposé (case fixe, toujours remplie — un rapport est rédigé à
+        // chaque réunion) et environ une réunion sur deux a en plus une
+        // pièce jointe (liste en nombre libre, voir le docblock du
+        // contrôleur).
+        // --------------------------------------------------------------
+        if ($typeReunion) {
+            $sousTypesReunion = $sousTypesParType->get('PV_REUNION', collect());
+            $objetsReunion = [
+                'Point hebdomadaire sur l\'avancement des inscriptions',
+                'Préparation de la rentrée académique',
+                'Suivi budgétaire du trimestre',
+                'Organisation des soutenances de fin d\'année',
+                'Révision du calendrier pédagogique',
+                'Bilan des admissions BTS',
+            ];
+
+            foreach ($objetsReunion as $index => $objet) {
+                $sousType = $sousTypesReunion->isNotEmpty()
+                    ? $sousTypesReunion[$index % $sousTypesReunion->count()]
+                    : null;
+
+                $reunion = Reunion::create([
+                    'annee_academique_id' => $anneeRecente->id,
+                    'date_reunion' => now()->subWeeks($index + 1)->toDateString(),
+                    'sous_type_document_id' => $sousType?->id,
+                    'description' => $objet,
+                    'created_by' => $admin->id,
+                ]);
+                $reunionsCreees[] = $reunion;
+
+                $caseRapport = ReunionFichier::create([
+                    'reunion_id' => $reunion->id,
+                    'role' => ReunionFichier::ROLE_RAPPORT,
+                    'numero' => null,
+                    'libelle' => null,
+                    'document_id' => null,
+                ]);
+
+                $documentRapport = $this->creerDocument(
+                    $admin,
+                    ($sousType?->libelle ?? 'Réunion').' du '.$reunion->date_reunion->format('d/m/Y').' - Rapport',
+                    [
+                        'type_document_id' => $typeReunion->id,
+                        'sous_type_document_id' => $sousType?->id,
+                        'annee_academique_id' => $anneeRecente->id,
+                    ],
+                );
+                $caseRapport->update(['document_id' => $documentRapport->id]);
+                $documentsCrees[] = $documentRapport;
+
+                // Environ une réunion sur deux a une pièce jointe (liste de
+                // présence) en plus du rapport.
+                if ($index % 2 === 0) {
+                    $documentPieceJointe = $this->creerDocument(
+                        $admin,
+                        ($sousType?->libelle ?? 'Réunion').' du '.$reunion->date_reunion->format('d/m/Y').' - Liste de présence',
+                        [
+                            'type_document_id' => $typeReunion->id,
+                            'sous_type_document_id' => $sousType?->id,
+                            'annee_academique_id' => $anneeRecente->id,
+                        ],
+                    );
+                    ReunionFichier::create([
+                        'reunion_id' => $reunion->id,
+                        'role' => ReunionFichier::ROLE_PIECE_JOINTE,
+                        'numero' => 1,
+                        'libelle' => 'Liste de présence',
+                        'document_id' => $documentPieceJointe->id,
+                    ]);
+                    $documentsCrees[] = $documentPieceJointe;
+                }
+            }
+        }
+
+        // --------------------------------------------------------------
         // 3ter) Quelques exemples avec sous-type, pour des types emblématiques
         // de la refonte du référentiel (Bordereau, Autorisation de congé,
         // Bilan des cours en ligne) — pour que le champ/filtre "Sous-type"
@@ -573,7 +658,11 @@ class DocumentSeeder extends Seeder
             ->random(min(1, count($sessionsReleveCreees)))
             ->each(fn (SessionReleve $session) => $session->delete());
 
-        $this->command?->info(count($documentsCrees).' document(s) de démonstration créé(s) (dont '.count($pvSoutenancesCreees).' PV de soutenance, '.count($sessionsDeliberationCreees).' session(s) de délibération et '.count($sessionsReleveCreees).' session(s) de relevé).');
+        collect($reunionsCreees)
+            ->random(min(1, count($reunionsCreees)))
+            ->each(fn (Reunion $reunion) => $reunion->delete());
+
+        $this->command?->info(count($documentsCrees).' document(s) de démonstration créé(s) (dont '.count($pvSoutenancesCreees).' PV de soutenance, '.count($sessionsDeliberationCreees).' session(s) de délibération, '.count($sessionsReleveCreees).' session(s) de relevé et '.count($reunionsCreees).' PV de réunion).');
     }
 
     /**

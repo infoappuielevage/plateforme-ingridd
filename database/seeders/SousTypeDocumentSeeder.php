@@ -20,6 +20,14 @@ use Illuminate\Database\Seeder;
  * référentiel, chacun avec ses propres sous-types du même nom : aucun lien
  * entre les deux, une simple coïncidence de libellé.
  *
+ * `PV_REUNION` porte ici le "type de réunion" demandé explicitement par le
+ * client (réunion hebdomadaire, réunion extraordinaire...) — voir
+ * App\Models\Reunion::sousType() et le docblock de la migration
+ * 2026_10_07_000001_create_reunions_table.php. Liste volontairement courte
+ * pour démarrer (même "etc." que pour "Bordereau" ci-dessus) : à compléter
+ * depuis Administration > Référentiels > Types de documents > PV de réunion
+ * > Sous-types, sans toucher au code.
+ *
  * `updateOrCreate(['type_document_id' => ..., 'libelle' => ...], [...])` —
  * jamais de `delete()` — idempotent comme le reste des seeders du projet.
  * Si un type listé ci-dessous n'existe pas (référentiel pas encore seedé,
@@ -41,6 +49,7 @@ class SousTypeDocumentSeeder extends Seeder
             'BORDEREAU' => ['BNSP', 'CNSS', 'Coris Banque', 'FONER', 'Ministère', 'UNB'],
             'PV_DELIBERATION' => ['Licence', 'Master'],
             'RELEVE_NOTES' => ['Licence', 'Master'],
+            'PV_REUNION' => ['Réunion hebdomadaire', 'Réunion extraordinaire'],
         ];
 
         foreach ($sousTypesParType as $codeType => $libelles) {

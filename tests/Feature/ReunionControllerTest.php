@@ -1,0 +1,368 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\AnneeAcademique;
+use App\Models\Document;
+use App\Models\Reunion;
+use App\Models\ReunionFichier;
+use App\Models\Role;
+use App\Models\SousTypeDocument;
+use App\Models\TypeDocument;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
+
+/**
+ * App\Http\Controllers\ReunionController — même principe que
+ * tests/Feature/SessionReleveControllerTest.php (voir son docblock) pour la
+ * structure générale (corbeille, permissions, fichiers qui deviennent de
+ * vrais App\Models\Document), mais DEUX différences majeures assumées par le
+ * contrôleur (voir son docblock) :
+ *
+ * - aucune combinaison de champs ne "figge" un nombre de cases à la création
+ *   (pas de cycle/filière) : TOUS les champs restent modifiables après coup,
+ *   contrairement aux PV de délibération/Relevés de notes ;
+ * - une seule case fixe ("rapport") plus une liste de pièces jointes EN
+ *   NOMBRE LIBRE, ajoutées/retirées une à une plutôt que préremplies par
+ *   cycle.
+ */
+class ReunionControllerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_un_admin_accede_a_la_liste(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->get(route('gestion.reunions.index'))->assertOk();
+    }
+
+    public function test_un_role_sans_permission_ne_peut_pas_voir_la_liste(): void
+    {
+        Role::query()->create([
+            'slug' => 'sans_droits_reunions',
+            'name' => 'Sans droits',
+            'permissions' => ['reunions' => ['view' => false]],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'sans_droits_reunions']);
+
+        $this->actingAs($utilisateur)->get(route('gestion.reunions.index'))->assertForbidden();
+    }
+
+    /** La case "rapport" est pré-créée vide à la création — voir ReunionController::creerCasesVides(). */
+    public function test_la_creation_dune_reunion_precree_la_case_rapport_vide(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $annee = AnneeAcademique::factory()->create();
+        $type = TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+        $sousType = SousTypeDocument::factory()->create(['type_document_id' => $type->id, 'libelle' => 'Réunion hebdomadaire']);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.store'), [
+                'annee_academique_id' => $annee->id,
+                'date_reunion' => '2026-10-07',
+                'sous_type_document_id' => $sousType->id,
+                'description' => 'Point hebdomadaire',
+            ])
+            ->assertRedirect();
+
+        $reunion = Reunion::query()->firstOrFail();
+
+        $this->assertSame(1, $reunion->fichiers()->count());
+        $caseRapport = $reunion->fichiers()->firstOrFail();
+        $this->assertSame(ReunionFichier::ROLE_RAPPORT, $caseRapport->role);
+        $this->assertNull($caseRapport->document_id);
+        $this->assertSame($sousType->id, $reunion->sous_type_document_id);
+    }
+
+    public function test_la_validation_exige_les_champs_obligatoires(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.store'), [])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['annee_academique_id', 'date_reunion', 'sous_type_document_id']);
+
+        $this->assertSame(0, Reunion::query()->count());
+    }
+
+    /** `sous_type_document_id` doit appartenir au type PV_REUNION — un sous-type d'un autre type (ex. Bordereau) est refusé. */
+    public function test_le_sous_type_document_id_doit_appartenir_au_type_pv_reunion(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $annee = AnneeAcademique::factory()->create();
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+        $autreType = TypeDocument::factory()->create(['code' => 'BORDEREAU']);
+        $sousTypeDunAutreType = SousTypeDocument::factory()->create(['type_document_id' => $autreType->id]);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.store'), [
+                'annee_academique_id' => $annee->id,
+                'date_reunion' => '2026-10-07',
+                'sous_type_document_id' => $sousTypeDunAutreType->id,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('sous_type_document_id');
+
+        $this->assertSame(0, Reunion::query()->count());
+    }
+
+    /** Le fichier déposé devient un vrai App\Models\Document, réutilisant le type PV_REUNION déjà existant. */
+    public function test_deposer_le_rapport_cree_un_document_et_remplit_la_case(): void
+    {
+        Storage::fake('documents');
+
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+        $reunion = Reunion::factory()->create();
+        $caseRapport = ReunionFichier::factory()->create([
+            'reunion_id' => $reunion->id,
+            'role' => ReunionFichier::ROLE_RAPPORT,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.rapport.store', $reunion->id), [
+                'fichier' => UploadedFile::fake()->image('rapport.png'),
+            ])
+            ->assertRedirect();
+
+        $caseRapport->refresh();
+        $this->assertNotNull($caseRapport->document_id);
+
+        $document = Document::query()->findOrFail($caseRapport->document_id);
+        $this->assertSame($type->id, $document->type_document_id);
+        $this->assertSame($reunion->annee_academique_id, $document->annee_academique_id);
+        $this->assertSame($admin->id, $document->uploaded_by);
+    }
+
+    /** Remplacer le rapport met l'ancien document à la corbeille (jamais supprimé tout de suite). */
+    public function test_remplacer_le_rapport_met_lancien_document_a_la_corbeille(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+        $caseRapport = ReunionFichier::factory()->create([
+            'reunion_id' => $reunion->id,
+            'role' => ReunionFichier::ROLE_RAPPORT,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.rapport.store', $reunion->id), [
+                'fichier' => UploadedFile::fake()->image('v1.png'),
+            ])
+            ->assertRedirect();
+
+        $caseRapport->refresh();
+        $ancienDocumentId = $caseRapport->document_id;
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.rapport.store', $reunion->id), [
+                'fichier' => UploadedFile::fake()->image('v2.png'),
+            ])
+            ->assertRedirect();
+
+        $caseRapport->refresh();
+        $this->assertNotSame($ancienDocumentId, $caseRapport->document_id);
+        $this->assertNotNull(Document::onlyTrashed()->find($ancienDocumentId));
+    }
+
+    /** Retirer le rapport vide la case sans la supprimer — elle reste disponible pour un nouveau dépôt. */
+    public function test_retirer_le_rapport_vide_la_case_sans_la_supprimer(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+        $caseRapport = ReunionFichier::factory()->create([
+            'reunion_id' => $reunion->id,
+            'role' => ReunionFichier::ROLE_RAPPORT,
+        ]);
+
+        $this->actingAs($admin)->post(route('gestion.reunions.rapport.store', $reunion->id), [
+            'fichier' => UploadedFile::fake()->image('rapport.png'),
+        ])->assertRedirect();
+        $documentId = $caseRapport->refresh()->document_id;
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.rapport.destroy', $reunion->id))
+            ->assertRedirect();
+
+        $caseRapport->refresh();
+        $this->assertNull($caseRapport->document_id);
+        $this->assertDatabaseHas('reunion_fichiers', ['id' => $caseRapport->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($documentId));
+    }
+
+    /** Ajouter une pièce jointe crée une NOUVELLE ligne déjà remplie — aucune case vide pré-créée pour ce rôle. */
+    public function test_ajouter_une_piece_jointe_cree_une_nouvelle_ligne_remplie(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.pieces-jointes.store', $reunion->id), [
+                'libelle' => 'Liste de présence',
+                'fichier' => UploadedFile::fake()->image('presence.png'),
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(1, $reunion->fichiers()->where('role', ReunionFichier::ROLE_PIECE_JOINTE)->count());
+        $pieceJointe = $reunion->fichiers()->where('role', ReunionFichier::ROLE_PIECE_JOINTE)->firstOrFail();
+        $this->assertSame(1, $pieceJointe->numero);
+        $this->assertSame('Liste de présence', $pieceJointe->libelle);
+        $this->assertNotNull($pieceJointe->document_id);
+    }
+
+    /** Chaque nouvelle pièce jointe reçoit le numéro suivant (simple compteur d'affichage, pas de case figée). */
+    public function test_ajouter_plusieurs_pieces_jointes_incremente_le_numero(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+
+        $this->actingAs($admin)->post(route('gestion.reunions.pieces-jointes.store', $reunion->id), [
+            'fichier' => UploadedFile::fake()->image('annexe-1.png'),
+        ])->assertRedirect();
+
+        $this->actingAs($admin)->post(route('gestion.reunions.pieces-jointes.store', $reunion->id), [
+            'fichier' => UploadedFile::fake()->image('annexe-2.png'),
+        ])->assertRedirect();
+
+        $this->assertSame(
+            [1, 2],
+            $reunion->fichiers()->where('role', ReunionFichier::ROLE_PIECE_JOINTE)->orderBy('numero')->pluck('numero')->all()
+        );
+    }
+
+    /** Retirer une pièce jointe supprime la LIGNE elle-même (pas de case à garder disponible) et met le document à la corbeille. */
+    public function test_retirer_une_piece_jointe_supprime_la_ligne_et_met_le_document_a_la_corbeille(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+
+        $this->actingAs($admin)->post(route('gestion.reunions.pieces-jointes.store', $reunion->id), [
+            'fichier' => UploadedFile::fake()->image('annexe.png'),
+        ])->assertRedirect();
+        $pieceJointe = $reunion->fichiers()->where('role', ReunionFichier::ROLE_PIECE_JOINTE)->firstOrFail();
+        $documentId = $pieceJointe->document_id;
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.pieces-jointes.destroy', ['reunion' => $reunion->id, 'fichier' => $pieceJointe->id]))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('reunion_fichiers', ['id' => $pieceJointe->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($documentId));
+    }
+
+    /** Une pièce jointe d'une AUTRE réunion ne doit jamais être retirable via l'URL d'une réunion différente. */
+    public function test_une_piece_jointe_dune_autre_reunion_ne_peut_pas_etre_retiree(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reunionA = Reunion::factory()->create();
+        $reunionB = Reunion::factory()->create();
+        $pieceDeA = ReunionFichier::factory()->create([
+            'reunion_id' => $reunionA->id,
+            'role' => ReunionFichier::ROLE_PIECE_JOINTE,
+            'numero' => 1,
+        ]);
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.pieces-jointes.destroy', ['reunion' => $reunionB->id, 'fichier' => $pieceDeA->id]))
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('reunion_fichiers', ['id' => $pieceDeA->id]);
+    }
+
+    public function test_mise_a_la_corbeille_et_restauration_dune_reunion(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.destroy', $reunion->id))
+            ->assertRedirect();
+
+        $this->assertNotNull($reunion->fresh()->deleted_at);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.restore', $reunion->id))
+            ->assertRedirect();
+
+        $this->assertNull($reunion->fresh()->deleted_at);
+    }
+
+    /** La suppression définitive emporte aussi (à la corbeille) les documents encore attachés (rapport + pièces jointes). */
+    public function test_suppression_definitive_met_les_documents_encore_attaches_a_la_corbeille(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+        $caseRapport = ReunionFichier::factory()->create([
+            'reunion_id' => $reunion->id,
+            'role' => ReunionFichier::ROLE_RAPPORT,
+        ]);
+
+        $this->actingAs($admin)->post(route('gestion.reunions.rapport.store', $reunion->id), [
+            'fichier' => UploadedFile::fake()->image('rapport.png'),
+        ])->assertRedirect();
+        $documentId = $caseRapport->refresh()->document_id;
+
+        $this->actingAs($admin)->delete(route('gestion.reunions.destroy', $reunion->id));
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.force-destroy', $reunion->id))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('reunions', ['id' => $reunion->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($documentId));
+    }
+
+    /**
+     * Contrairement aux PV de délibération/Relevés de notes (où seule la
+     * description reste modifiable, voir SessionReleveControllerTest), AUCUN
+     * champ d'une réunion ne détermine un nombre de cases à figer : tous
+     * restent modifiables après création (voir le docblock de
+     * ReunionController).
+     */
+    public function test_tous_les_champs_restent_modifiables_apres_creation(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+        $ancienneAnnee = AnneeAcademique::factory()->create();
+        $nouvelleAnnee = AnneeAcademique::factory()->create();
+        $nouveauSousType = SousTypeDocument::factory()->create(['type_document_id' => $type->id]);
+        $reunion = Reunion::factory()->create(['annee_academique_id' => $ancienneAnnee->id]);
+
+        $this->actingAs($admin)
+            ->put(route('gestion.reunions.update', $reunion->id), [
+                'annee_academique_id' => $nouvelleAnnee->id,
+                'date_reunion' => '2026-11-01',
+                'sous_type_document_id' => $nouveauSousType->id,
+                'description' => 'Description corrigée',
+            ])
+            ->assertRedirect();
+
+        $reunion->refresh();
+        $this->assertSame($nouvelleAnnee->id, $reunion->annee_academique_id);
+        $this->assertSame('2026-11-01', $reunion->date_reunion->toDateString());
+        $this->assertSame($nouveauSousType->id, $reunion->sous_type_document_id);
+        $this->assertSame('Description corrigée', $reunion->description);
+    }
+}

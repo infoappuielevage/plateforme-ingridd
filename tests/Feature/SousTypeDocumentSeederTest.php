@@ -12,8 +12,8 @@ use Tests\TestCase;
 /**
  * SousTypeDocumentSeeder — sous-types recensés par le client pour les types
  * qui en ont (Attestation, Autorisation de congé, Bilan des cours en ligne,
- * Bordereau, Délibération). Liste de départ, complétable depuis
- * l'administration sans toucher au code (voir son docblock).
+ * Bordereau, Délibération, PV de réunion). Liste de départ, complétable
+ * depuis l'administration sans toucher au code (voir son docblock).
  */
 class SousTypeDocumentSeederTest extends TestCase
 {
@@ -40,6 +40,14 @@ class SousTypeDocumentSeederTest extends TestCase
         $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $releveNotes->id, 'libelle' => 'Licence']);
         $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $releveNotes->id, 'libelle' => 'Master']);
         $this->assertSame(2, SousTypeDocument::query()->where('type_document_id', $releveNotes->id)->count());
+
+        // PV_REUNION porte le "type de réunion" (réunion hebdomadaire,
+        // extraordinaire...) — voir le docblock de la classe et celui de
+        // 2026_10_07_000001_create_reunions_table.php.
+        $pvReunion = TypeDocument::query()->where('code', 'PV_REUNION')->firstOrFail();
+        $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $pvReunion->id, 'libelle' => 'Réunion hebdomadaire']);
+        $this->assertDatabaseHas('sous_types_documents', ['type_document_id' => $pvReunion->id, 'libelle' => 'Réunion extraordinaire']);
+        $this->assertSame(2, SousTypeDocument::query()->where('type_document_id', $pvReunion->id)->count());
     }
 
     /** Le référentiel des types n'a pas été seedé : aucun sous-type ne doit être créé, sans erreur. */

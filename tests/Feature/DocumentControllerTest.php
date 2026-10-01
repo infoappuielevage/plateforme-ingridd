@@ -320,6 +320,7 @@ class DocumentControllerTest extends TestCase
         yield 'PV de soutenance' => ['PV_SOUTENANCE'];
         yield 'PV de délibération' => ['PV_DELIBERATION'];
         yield 'Relevés de notes' => ['RELEVE_NOTES'];
+        yield 'PV de réunion' => ['PV_REUNION'];
     }
 
     /**
