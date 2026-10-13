@@ -15,6 +15,16 @@
             <a href="{{ route('gestion.referentiels.index', ['referentiel' => $referentiel]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can($definition['cle'], 'delete'))
+                <form method="POST" action="{{ route('gestion.referentiels.corbeille.vider', ['referentiel' => $referentiel]) }}" class="d-inline"
+                      onsubmit="return confirm('Tous les éléments actuellement dans la corbeille seront supprimés définitivement (ceux encore utilisés ailleurs seront ignorés). Cette action est irréversible. Continuer ?');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash3-fill"></i> Vider la corbeille
+                    </button>
+                </form>
+            @endif
         @else
             <a href="{{ route('gestion.referentiels.index', ['referentiel' => $referentiel, 'corbeille' => 1]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-trash3"></i> Corbeille

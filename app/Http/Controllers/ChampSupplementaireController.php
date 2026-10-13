@@ -50,6 +50,7 @@ class ChampSupplementaireController extends Controller
         return view('gestion.champs-supplementaires.index', [
             'champs' => $champs,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && ChampSupplementaire::onlyTrashed()->exists(),
             'triActuel' => $triResolu[0],
             'directionActuelle' => $triResolu[1],
         ]);
@@ -177,6 +178,25 @@ class ChampSupplementaireController extends Controller
         ChampSupplementaire::onlyTrashed()->findOrFail($id)->forceDelete();
 
         return back()->with('succes', 'Champ supplémentaire supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les champs
+     * supplémentaires corbeillés en un clic — même principe que
+     * DocumentController::viderCorbeille(), même raisonnement que
+     * forceDestroy() ci-dessus (aucun garde-fou nécessaire ici non plus).
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('champs_supplementaires', 'delete'), 403);
+
+        $champs = ChampSupplementaire::onlyTrashed()->get();
+
+        foreach ($champs as $champ) {
+            $champ->forceDelete();
+        }
+
+        return back()->with('succes', $champs->count().' champ(s) supplémentaire(s) supprimé(s) définitivement.');
     }
 
     protected function valider(Request $request): array

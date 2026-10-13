@@ -15,6 +15,16 @@
             <a href="{{ route('gestion.recettes.dossiers.index', ['type' => $typeUrl]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('recettes', 'delete'))
+                <form method="POST" action="{{ route('gestion.recettes.dossiers.corbeille.vider', ['type' => $typeUrl]) }}" class="d-inline"
+                      onsubmit="return confirm('Tous les dossiers actuellement dans la corbeille de ce volet seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash3-fill"></i> Vider la corbeille
+                    </button>
+                </form>
+            @endif
         @else
             @if (\App\Support\ResourceAccess::can('recettes', 'delete'))
                 <a href="{{ route('gestion.recettes.dossiers.index', ['type' => $typeUrl, 'corbeille' => 1]) }}" class="btn btn-outline-secondary">

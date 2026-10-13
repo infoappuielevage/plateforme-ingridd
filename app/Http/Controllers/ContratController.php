@@ -266,6 +266,34 @@ class ContratController extends Controller
         return redirect()->route('gestion.contrats.index', ['typeContrat' => $typeContrat->code, 'corbeille' => 1])->with('succes', 'Contrat supprimé définitivement.');
     }
 
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les contrats
+     * corbeillés de CETTE catégorie en un clic — même principe que
+     * DocumentController::viderCorbeille(). Scopé à `$typeContrat`, comme le
+     * reste de cet écran (onglets par catégorie) : ne vide jamais la
+     * corbeille d'une AUTRE catégorie.
+     */
+    public function viderCorbeille(TypeContrat $typeContrat): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('contrats', 'delete'), 403);
+
+        $contrats = Contrat::onlyTrashed()->with('fichiers')->where('type_contrat_id', $typeContrat->id)->get();
+
+        foreach ($contrats as $contrat) {
+            foreach ($contrat->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $contrat->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.contrats.index', ['typeContrat' => $typeContrat->code, 'corbeille' => 1])
+            ->with('succes', $contrats->count().' contrat(s) supprimé(s) définitivement.');
+    }
+
     /** Mise à la corbeille groupée — même principe que ReunionController::mettreCorbeilleGroupee(). */
     public function mettreCorbeilleGroupee(Request $request, TypeContrat $typeContrat): RedirectResponse
     {

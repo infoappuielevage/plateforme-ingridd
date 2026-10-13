@@ -62,6 +62,7 @@ class ListeFinanceEtudiantController extends Controller
         return view('gestion.listes-finances-etudiants.index', [
             'listes' => $listes,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && ListeFinanceEtudiant::onlyTrashed()->exists(),
             'triActuel' => $triActuel,
             'directionActuelle' => $directionActuelle,
         ]);
@@ -159,6 +160,32 @@ class ListeFinanceEtudiantController extends Controller
         $trouve->forceDelete();
 
         return redirect()->route('gestion.listes-finances-etudiants.index', ['corbeille' => 1])->with('succes', 'Liste supprimée définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUTES les listes
+     * corbeillées en un clic — même principe que DocumentController::
+     * viderCorbeille().
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete'), 403);
+
+        $listes = ListeFinanceEtudiant::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($listes as $liste) {
+            foreach ($liste->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $liste->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.listes-finances-etudiants.index', ['corbeille' => 1])
+            ->with('succes', $listes->count().' liste(s) supprimée(s) définitivement.');
     }
 
     /** Ajoute UN NOUVEAU fichier à la liste (en nombre libre, voir le docblock de la classe). */

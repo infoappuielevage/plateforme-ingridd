@@ -71,6 +71,7 @@ class EtatFinancierController extends Controller
         return view('gestion.etats-financiers.index', [
             'etatsFinanciers' => $etatsFinanciers,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && EtatFinancier::onlyTrashed()->exists(),
             'triActuel' => $triActuel,
             'directionActuelle' => $directionActuelle,
         ]);
@@ -169,6 +170,30 @@ class EtatFinancierController extends Controller
         $trouve->forceDelete();
 
         return redirect()->route('gestion.etats-financiers.index', ['corbeille' => 1])->with('succes', 'État financier supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les états
+     * financiers corbeillés en un clic — même principe que
+     * DocumentController::viderCorbeille().
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('etats_financiers', 'delete'), 403);
+
+        $etatsFinanciers = EtatFinancier::onlyTrashed()->get();
+
+        foreach ($etatsFinanciers as $etatFinancier) {
+            if ($etatFinancier->document_id) {
+                Document::query()->find($etatFinancier->document_id)?->delete();
+            }
+
+            $etatFinancier->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.etats-financiers.index', ['corbeille' => 1])
+            ->with('succes', $etatsFinanciers->count().' état(s) financier(s) supprimé(s) définitivement.');
     }
 
     /** Mise à la corbeille groupée — même principe que les autres écrans dédiés (sélection multiple, voir index.blade.php). */

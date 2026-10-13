@@ -549,6 +549,36 @@ class ContratControllerTest extends TestCase
         $this->assertNotNull(Document::onlyTrashed()->find($documentB->id));
     }
 
+    /**
+     * "Vider la corbeille" — demande explicite du client (voir le docblock
+     * de ContratController::viderCorbeille()) : purge TOUS les contrats
+     * corbeillés de CETTE catégorie, avec la même cascade documents, mais ne
+     * touche JAMAIS la corbeille d'une AUTRE catégorie (onglets, voir
+     * resources/views/gestion/contrats/_onglets.blade.php).
+     */
+    public function test_vider_la_corbeille_ne_touche_pas_les_autres_categories(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $typeContrat = TypeContrat::factory()->create();
+        $contrat = Contrat::factory()->create(['type_contrat_id' => $typeContrat->id]);
+        $document = Document::factory()->create();
+        ContratFichier::factory()->create(['contrat_id' => $contrat->id, 'document_id' => $document->id]);
+        $contrat->delete();
+
+        $autreType = TypeContrat::factory()->create();
+        $contratAutreCategorie = Contrat::factory()->create(['type_contrat_id' => $autreType->id]);
+        $contratAutreCategorie->delete();
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.contrats.corbeille.vider', ['typeContrat' => $typeContrat->code]))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('contrats', ['id' => $contrat->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($document->id));
+        // Toujours à la corbeille (soft-deleted), jamais forcé définitivement : autre catégorie.
+        $this->assertNotNull(Contrat::onlyTrashed()->find($contratAutreCategorie->id));
+    }
+
     /** Une sélection vide (ou absente) doit être refusée côté serveur, pas seulement empêchée par le JS du bouton. */
     public function test_une_selection_vide_est_refusee(): void
     {

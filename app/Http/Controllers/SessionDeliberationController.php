@@ -322,6 +322,36 @@ class SessionDeliberationController extends Controller
     }
 
     /**
+     * "Vider la corbeille" : supprime définitivement TOUTES les sessions de
+     * délibération corbeillées en un clic, sans avoir à les sélectionner une
+     * par une — même principe que DocumentController::viderCorbeille(), sur
+     * demande du client ("Vider la corbeille" manquant sur la plupart des
+     * écrans). Porte sur TOUTE la corbeille, jamais seulement la page
+     * affichée (voir `corbeillePeutEtreVidee` dans index()) : agit directement
+     * sur SessionDeliberation::onlyTrashed(), jamais sur une sélection.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+
+        $sessions = SessionDeliberation::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($sessions as $session) {
+            foreach ($session->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $session->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.sessions-deliberation.index', ['corbeille' => 1])
+            ->with('succes', $sessions->count().' session(s) de délibération supprimée(s) définitivement.');
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de sessions (cases à
      * cocher, voir resources/views/gestion/sessions-deliberation/index.blade.php)
      * mises à la corbeille en une seule action — MÊME PRINCIPE que

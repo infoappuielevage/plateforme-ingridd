@@ -289,6 +289,34 @@ class ReunionController extends Controller
     }
 
     /**
+     * "Vider la corbeille" : supprime définitivement TOUTES les réunions
+     * corbeillées en un clic — même principe que DocumentController::
+     * viderCorbeille(). Porte sur TOUTE la corbeille (voir
+     * `corbeillePeutEtreVidee` dans index()), jamais seulement la page
+     * affichée.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('reunions', 'delete'), 403);
+
+        $reunions = Reunion::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($reunions as $reunion) {
+            foreach ($reunion->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $reunion->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.reunions.index', ['corbeille' => 1])
+            ->with('succes', $reunions->count().' réunion(s) supprimée(s) définitivement.');
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de réunions (cases à
      * cocher, voir resources/views/gestion/reunions/index.blade.php) mises à
      * la corbeille en une seule action — MÊME PRINCIPE que

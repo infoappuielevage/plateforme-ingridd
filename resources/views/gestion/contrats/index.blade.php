@@ -15,6 +15,16 @@
             <a href="{{ route('gestion.contrats.index', ['typeContrat' => $typeContrat->code]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('contrats', 'delete'))
+                <form method="POST" action="{{ route('gestion.contrats.corbeille.vider', ['typeContrat' => $typeContrat->code]) }}" class="d-inline"
+                      onsubmit="return confirm('Tous les contrats actuellement dans la corbeille de cette catégorie seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash3-fill"></i> Vider la corbeille
+                    </button>
+                </form>
+            @endif
         @else
             @if (\App\Support\ResourceAccess::can('contrats', 'delete'))
                 <a href="{{ route('gestion.contrats.index', ['typeContrat' => $typeContrat->code, 'corbeille' => 1]) }}" class="btn btn-outline-secondary">

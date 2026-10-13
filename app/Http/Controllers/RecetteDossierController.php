@@ -76,6 +76,7 @@ class RecetteDossierController extends Controller
         return view('gestion.recettes.dossiers.index', [
             'dossiers' => $dossiers,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && RecetteDossier::onlyTrashed()->where('type', $typeInterne)->exists(),
             'typeUrl' => $type,
             'typeLibelle' => RecetteDossier::TYPES[$typeInterne],
             'triActuel' => $triActuel,
@@ -195,6 +196,34 @@ class RecetteDossierController extends Controller
         $trouve->forceDelete();
 
         return redirect()->route('gestion.recettes.dossiers.index', ['type' => $type, 'corbeille' => 1])->with('succes', 'Dossier supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les dossiers
+     * corbeillés de CE volet (retrait diplôme OU frais de soutenance) en un
+     * clic — même principe que DocumentController::viderCorbeille(). Scopé
+     * à `$type`, comme le reste de cet écran : ne vide jamais l'AUTRE volet.
+     */
+    public function viderCorbeille(string $type): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
+        $typeInterne = $this->resoudreType($type);
+
+        $dossiers = RecetteDossier::onlyTrashed()->with('fichiers')->where('type', $typeInterne)->get();
+
+        foreach ($dossiers as $dossier) {
+            foreach ($dossier->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $dossier->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.recettes.dossiers.index', ['type' => $type, 'corbeille' => 1])
+            ->with('succes', $dossiers->count().' dossier(s) supprimé(s) définitivement.');
     }
 
     /** Ajoute UN NOUVEAU fichier à la liste (en nombre libre, voir le docblock de la classe). */

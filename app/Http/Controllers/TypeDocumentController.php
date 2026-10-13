@@ -43,6 +43,7 @@ class TypeDocumentController extends Controller
         return view('gestion.types-documents.index', [
             'types' => $types,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && TypeDocument::onlyTrashed()->exists(),
             'triActuel' => $triActuel,
             'directionActuelle' => $directionActuelle,
         ]);
@@ -182,6 +183,27 @@ class TypeDocumentController extends Controller
         TypeDocument::onlyTrashed()->findOrFail($id)->forceDelete();
 
         return back()->with('succes', 'Type de document supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les types de
+     * document corbeillés en un clic — même principe que
+     * DocumentController::viderCorbeille(). Même raisonnement que
+     * forceDestroy() ci-dessus (aucun garde-fou nécessaire : destroy()
+     * garantit déjà qu'un type n'arrive à la corbeille qu'une fois sans
+     * aucun document, et un type corbeillé n'est plus proposé à la saisie).
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('types_documents', 'delete'), 403);
+
+        $types = TypeDocument::onlyTrashed()->get();
+
+        foreach ($types as $type) {
+            $type->forceDelete();
+        }
+
+        return back()->with('succes', $types->count().' type(s) de document supprimé(s) définitivement.');
     }
 
     protected function valider(Request $request, ?TypeDocument $type): array

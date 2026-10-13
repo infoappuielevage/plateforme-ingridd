@@ -15,6 +15,16 @@
             <a href="{{ route('gestion.types-pieces-etudiants.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('types_pieces_etudiants', 'delete'))
+                <form method="POST" action="{{ route('gestion.types-pieces-etudiants.corbeille.vider') }}" class="d-inline"
+                      onsubmit="return confirm('Tous les types de pièce actuellement dans la corbeille seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash3-fill"></i> Vider la corbeille
+                    </button>
+                </form>
+            @endif
         @else
             @if (\App\Support\ResourceAccess::can('types_pieces_etudiants', 'delete'))
                 <a href="{{ route('gestion.types-pieces-etudiants.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">

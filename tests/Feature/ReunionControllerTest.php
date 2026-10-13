@@ -354,6 +354,39 @@ class ReunionControllerTest extends TestCase
     }
 
     /**
+     * "Vider la corbeille" — demande explicite du client (voir le docblock
+     * de ReunionController::viderCorbeille()) : purge TOUTES les réunions
+     * corbeillées en un clic, avec la même cascade documents que
+     * forceDestroy()/forceDestroyGroupe(), et ne touche JAMAIS une réunion
+     * qui n'est pas à la corbeille.
+     */
+    public function test_vider_la_corbeille_supprime_tout_sauf_les_reunions_actives(): void
+    {
+        Storage::fake('documents');
+        TypeDocument::factory()->create(['code' => 'PV_REUNION']);
+        $admin = User::factory()->admin()->create();
+
+        $reunionCorbeillee = Reunion::factory()->create();
+        $document = Document::factory()->create();
+        ReunionFichier::factory()->create([
+            'reunion_id' => $reunionCorbeillee->id,
+            'role' => ReunionFichier::ROLE_RAPPORT,
+            'document_id' => $document->id,
+        ]);
+        $reunionCorbeillee->delete();
+
+        $reunionActive = Reunion::factory()->create();
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.corbeille.vider'))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('reunions', ['id' => $reunionCorbeillee->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($document->id));
+        $this->assertDatabaseHas('reunions', ['id' => $reunionActive->id, 'deleted_at' => null]);
+    }
+
+    /**
      * Contrairement aux PV de délibération/Relevés de notes (où seule la
      * description reste modifiable, voir SessionReleveControllerTest), AUCUN
      * champ d'une réunion ne détermine un nombre de cases à figer : tous

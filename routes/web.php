@@ -160,6 +160,10 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         // Export Excel — demandé par le client, AVANT "/{sessionDeliberation}"
         // pour les mêmes raisons que les actions groupées ci-dessous.
         Route::get('/export', [SessionDeliberationController::class, 'export'])->name('export');
+        // "Vider la corbeille" — MÊME PRINCIPE que documents.corbeille.vider
+        // plus haut, déclarée AVANT les routes `{sessionDeliberation}` pour
+        // que "corbeille" ne soit jamais pris pour un id.
+        Route::delete('/corbeille/vider', [SessionDeliberationController::class, 'viderCorbeille'])->name('corbeille.vider');
         // Actions groupées (sélection multiple via cases à cocher, voir
         // resources/views/gestion/sessions-deliberation/index.blade.php) —
         // MÊME PRINCIPE que documents.corbeille-groupee et consorts plus
@@ -189,6 +193,8 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/', [SessionReleveController::class, 'store'])->name('store');
         // Export Excel — même principe que "sessions-deliberation" ci-dessus.
         Route::get('/export', [SessionReleveController::class, 'export'])->name('export');
+        // "Vider la corbeille" — même principe que le groupe "sessions-deliberation" ci-dessus.
+        Route::delete('/corbeille/vider', [SessionReleveController::class, 'viderCorbeille'])->name('corbeille.vider');
         // Actions groupées — même principe que le groupe "sessions-deliberation" ci-dessus.
         Route::post('/corbeille-groupee', [SessionReleveController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
         Route::post('/corbeille/restaurer-groupe', [SessionReleveController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
@@ -226,6 +232,8 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/import', [PvSoutenanceController::class, 'formulaireImport'])->name('import.formulaire');
         Route::get('/import/modele', [PvSoutenanceController::class, 'modeleImport'])->name('import.modele');
         Route::post('/import', [PvSoutenanceController::class, 'import'])->name('import');
+        // "Vider la corbeille" — MÊME PRINCIPE que documents.corbeille.vider plus haut.
+        Route::delete('/corbeille/vider', [PvSoutenanceController::class, 'viderCorbeille'])->name('corbeille.vider');
         // Actions groupées (sélection multiple via cases à cocher, voir
         // resources/views/gestion/pv-soutenances/index.blade.php) — MÊME
         // PRINCIPE que documents.corbeille-groupee et consorts plus haut.
@@ -263,6 +271,8 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         // Export Excel — demandé par le client, AVANT "/{reunion}" pour les
         // mêmes raisons que les actions groupées ci-dessous.
         Route::get('/export', [ReunionController::class, 'export'])->name('export');
+        // "Vider la corbeille" — même principe que les autres écrans dédiés ci-dessus.
+        Route::delete('/corbeille/vider', [ReunionController::class, 'viderCorbeille'])->name('corbeille.vider');
         // Actions groupées — même principe que les autres écrans dédiés ci-dessus.
         Route::post('/corbeille-groupee', [ReunionController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
         Route::post('/corbeille/restaurer-groupe', [ReunionController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
@@ -300,6 +310,8 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/corbeille-groupee', [EtudiantController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
         Route::post('/corbeille/restaurer-groupe', [EtudiantController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
         Route::post('/corbeille/definitivement-groupe', [EtudiantController::class, 'forceDestroyGroupe'])->name('corbeille.force-destroy-groupe');
+        // "Vider la corbeille" — même principe que les actions groupées ci-dessus.
+        Route::delete('/corbeille/vider', [EtudiantController::class, 'viderCorbeille'])->name('corbeille.vider');
         // Export/import Excel — demandés par le client, voir le docblock de
         // export()/import() ci-dessous. Mêmes précautions d'ordre que les
         // actions groupées plus haut : déclarées AVANT "/{etudiant}" pour
@@ -335,6 +347,7 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/corbeille-groupee', [EtatFinancierController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
         Route::post('/corbeille/restaurer-groupe', [EtatFinancierController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
         Route::post('/corbeille/definitivement-groupe', [EtatFinancierController::class, 'forceDestroyGroupe'])->name('corbeille.force-destroy-groupe');
+        Route::delete('/corbeille/vider', [EtatFinancierController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{etatFinancier}', [EtatFinancierController::class, 'show'])->name('show');
         Route::get('/{etatFinancier}/modifier', [EtatFinancierController::class, 'edit'])->name('edit');
         Route::put('/{etatFinancier}', [EtatFinancierController::class, 'update'])->name('update');
@@ -380,6 +393,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
             Route::get('/', [RecetteScolariteController::class, 'index'])->name('index');
             Route::get('/creer', [RecetteScolariteController::class, 'create'])->name('create');
             Route::post('/', [RecetteScolariteController::class, 'store'])->name('store');
+            // "Vider la corbeille" — déclarée AVANT "/{recetteScolarite}"
+            // ci-dessous pour que "corbeille" ne soit jamais pris pour un id.
+            Route::delete('/corbeille/vider', [RecetteScolariteController::class, 'viderCorbeille'])->name('corbeille.vider');
             Route::get('/{recetteScolarite}', [RecetteScolariteController::class, 'show'])->name('show');
             Route::delete('/{recetteScolarite}', [RecetteScolariteController::class, 'destroy'])->name('destroy');
             Route::post('/{recetteScolarite}/restaurer', [RecetteScolariteController::class, 'restore'])->name('restore');
@@ -403,6 +419,10 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
             Route::get('/creer', [RecetteDossierController::class, 'create'])->name('create')
                 ->where('type', 'retrait-diplome|frais-soutenance');
             Route::post('/', [RecetteDossierController::class, 'store'])->name('store')
+                ->where('type', 'retrait-diplome|frais-soutenance');
+            // "Vider la corbeille" — déclarée AVANT "/{dossier}" ci-dessous
+            // pour que "corbeille" ne soit jamais pris pour un id.
+            Route::delete('/corbeille/vider', [RecetteDossierController::class, 'viderCorbeille'])->name('corbeille.vider')
                 ->where('type', 'retrait-diplome|frais-soutenance');
             Route::get('/{dossier}', [RecetteDossierController::class, 'show'])->name('show')
                 ->where('type', 'retrait-diplome|frais-soutenance');
@@ -463,6 +483,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [ListeFinanceEtudiantController::class, 'index'])->name('index');
         Route::get('/creer', [ListeFinanceEtudiantController::class, 'create'])->name('create');
         Route::post('/', [ListeFinanceEtudiantController::class, 'store'])->name('store');
+        // "Vider la corbeille" — déclarée AVANT "/{listeFinanceEtudiant}"
+        // ci-dessous pour que "corbeille" ne soit jamais pris pour un id.
+        Route::delete('/corbeille/vider', [ListeFinanceEtudiantController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{listeFinanceEtudiant}', [ListeFinanceEtudiantController::class, 'show'])->name('show');
         Route::delete('/{listeFinanceEtudiant}', [ListeFinanceEtudiantController::class, 'destroy'])->name('destroy');
         Route::post('/{listeFinanceEtudiant}/restaurer', [ListeFinanceEtudiantController::class, 'restore'])->name('restore');
@@ -478,6 +501,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [TypePieceEtudiantController::class, 'index'])->name('index');
         Route::get('/creer', [TypePieceEtudiantController::class, 'create'])->name('create');
         Route::post('/', [TypePieceEtudiantController::class, 'store'])->name('store');
+        // "Vider la corbeille" — déclarée AVANT "/{typePieceEtudiant}"
+        // ci-dessous pour que "corbeille" ne soit jamais pris pour un id.
+        Route::delete('/corbeille/vider', [TypePieceEtudiantController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{typePieceEtudiant}/modifier', [TypePieceEtudiantController::class, 'edit'])->name('edit');
         Route::put('/{typePieceEtudiant}', [TypePieceEtudiantController::class, 'update'])->name('update');
         Route::delete('/{typePieceEtudiant}', [TypePieceEtudiantController::class, 'destroy'])->name('destroy');
@@ -492,6 +518,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [TypeDepenseController::class, 'index'])->name('index');
         Route::get('/creer', [TypeDepenseController::class, 'create'])->name('create');
         Route::post('/', [TypeDepenseController::class, 'store'])->name('store');
+        // "Vider la corbeille" — déclarée AVANT "/{typeDepense}" ci-dessous
+        // pour que "corbeille" ne soit jamais pris pour un id.
+        Route::delete('/corbeille/vider', [TypeDepenseController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{typeDepense}/modifier', [TypeDepenseController::class, 'edit'])->name('edit');
         Route::put('/{typeDepense}', [TypeDepenseController::class, 'update'])->name('update');
         Route::delete('/{typeDepense}', [TypeDepenseController::class, 'destroy'])->name('destroy');
@@ -518,6 +547,7 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/{typeContrat:code}/creer', [ContratController::class, 'create'])->name('create');
         Route::post('/{typeContrat:code}', [ContratController::class, 'store'])->name('store');
         Route::get('/{typeContrat:code}/export', [ContratController::class, 'export'])->name('export');
+        Route::delete('/{typeContrat:code}/corbeille/vider', [ContratController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::post('/{typeContrat:code}/corbeille-groupee', [ContratController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
         Route::post('/{typeContrat:code}/corbeille/restaurer-groupe', [ContratController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
         Route::post('/{typeContrat:code}/corbeille/definitivement-groupe', [ContratController::class, 'forceDestroyGroupe'])->name('corbeille.force-destroy-groupe');
@@ -552,6 +582,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [TypeContratController::class, 'index'])->name('index');
         Route::get('/creer', [TypeContratController::class, 'create'])->name('create');
         Route::post('/', [TypeContratController::class, 'store'])->name('store');
+        // "Vider la corbeille" — déclarée AVANT "/{typeContrat}" ci-dessous
+        // pour que "corbeille" ne soit jamais pris pour un id.
+        Route::delete('/corbeille/vider', [TypeContratController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{typeContrat}/modifier', [TypeContratController::class, 'edit'])->name('edit');
         Route::put('/{typeContrat}', [TypeContratController::class, 'update'])->name('update');
         Route::delete('/{typeContrat}', [TypeContratController::class, 'destroy'])->name('destroy');
@@ -594,6 +627,7 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/corbeille-groupee', [ReferentielController::class, 'mettreCorbeilleGroupee'])->name('corbeille-groupee');
         Route::post('/corbeille/restaurer-groupe', [ReferentielController::class, 'restaurerGroupe'])->name('corbeille.restaurer-groupe');
         Route::post('/corbeille/definitivement-groupe', [ReferentielController::class, 'forceDestroyGroupe'])->name('corbeille.force-destroy-groupe');
+        Route::delete('/corbeille/vider', [ReferentielController::class, 'viderCorbeille'])->name('corbeille.vider');
 
         Route::get('/{id}/modifier', [ReferentielController::class, 'edit'])->name('edit');
         Route::put('/{id}', [ReferentielController::class, 'update'])->name('update');
@@ -610,6 +644,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/', [TypeDocumentController::class, 'store'])->name('store');
         // Export Excel — demandé par le client, voir le docblock de export().
         Route::get('/export', [TypeDocumentController::class, 'export'])->name('export');
+        // "Vider la corbeille" — déclarée AVANT "/{type}" ci-dessous pour
+        // que "corbeille" ne soit jamais pris pour un id/code.
+        Route::delete('/corbeille/vider', [TypeDocumentController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{type}/modifier', [TypeDocumentController::class, 'edit'])->name('edit');
         Route::put('/{type}', [TypeDocumentController::class, 'update'])->name('update');
         Route::delete('/{type}', [TypeDocumentController::class, 'destroy'])->name('destroy');
@@ -640,6 +677,9 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [ChampSupplementaireController::class, 'index'])->name('index');
         Route::get('/creer', [ChampSupplementaireController::class, 'create'])->name('create');
         Route::post('/', [ChampSupplementaireController::class, 'store'])->name('store');
+        // "Vider la corbeille" — déclarée AVANT "/{champSupplementaire}"
+        // ci-dessous pour que "corbeille" ne soit jamais pris pour un id.
+        Route::delete('/corbeille/vider', [ChampSupplementaireController::class, 'viderCorbeille'])->name('corbeille.vider');
         Route::get('/{champSupplementaire}/modifier', [ChampSupplementaireController::class, 'edit'])->name('edit');
         Route::put('/{champSupplementaire}', [ChampSupplementaireController::class, 'update'])->name('update');
         Route::delete('/{champSupplementaire}', [ChampSupplementaireController::class, 'destroy'])->name('destroy');

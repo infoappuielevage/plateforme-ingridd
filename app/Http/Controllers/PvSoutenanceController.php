@@ -76,6 +76,10 @@ class PvSoutenanceController extends Controller
         return view('gestion.pv-soutenances.index', [
             'pvSoutenances' => $pvSoutenances,
             'corbeille' => $corbeille,
+            // Ignore les filtres actifs (onglet niveau, recherche...) —
+            // "Vider la corbeille" agit toujours sur TOUS les PV corbeillés,
+            // jamais seulement ceux affichés à l'écran (voir viderCorbeille()).
+            'corbeillePeutEtreVidee' => $corbeille && PvSoutenance::onlyTrashed()->exists(),
             'filieres' => Filiere::query()->orderBy('ordre')->get(),
             'onglets' => ['tous' => 'Tous'] + PvSoutenance::NIVEAUX,
             'niveauActif' => $this->ongletNiveauValide($request),
@@ -650,6 +654,33 @@ class PvSoutenanceController extends Controller
         $pv->forceDelete();
 
         return redirect()->route('gestion.pv-soutenances.index', ['corbeille' => 1])->with('succes', 'PV de soutenance supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les PV de
+     * soutenance corbeillés en un clic — même principe que
+     * DocumentController::viderCorbeille(). Porte sur TOUTE la corbeille,
+     * jamais seulement la page affichée (ni un seul niveau/onglet).
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('pv_soutenances', 'delete'), 403);
+
+        $pvSoutenances = PvSoutenance::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($pvSoutenances as $pvSoutenance) {
+            foreach ($pvSoutenance->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $pvSoutenance->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.pv-soutenances.index', ['corbeille' => 1])
+            ->with('succes', $pvSoutenances->count().' PV de soutenance supprimé(s) définitivement.');
     }
 
     /**

@@ -72,6 +72,7 @@ class RecetteScolariteController extends Controller
         return view('gestion.recettes.scolarite.index', [
             'recettesScolarite' => $recettesScolarite,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && RecetteScolarite::onlyTrashed()->exists(),
             'triActuel' => $triActuel,
             'directionActuelle' => $directionActuelle,
         ]);
@@ -180,6 +181,32 @@ class RecetteScolariteController extends Controller
         $trouve->forceDelete();
 
         return redirect()->route('gestion.recettes.scolarite.index', ['corbeille' => 1])->with('succes', 'Dossier Scolarité supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les dossiers
+     * Scolarité corbeillés en un clic — même principe que
+     * DocumentController::viderCorbeille().
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
+
+        $dossiers = RecetteScolarite::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($dossiers as $dossier) {
+            foreach ($dossier->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $dossier->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.recettes.scolarite.index', ['corbeille' => 1])
+            ->with('succes', $dossiers->count().' dossier(s) Scolarité supprimé(s) définitivement.');
     }
 
     /**

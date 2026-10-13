@@ -41,6 +41,7 @@ class TypeDepenseController extends Controller
         return view('gestion.types-depenses.index', [
             'types' => $types,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && TypeDepense::onlyTrashed()->exists(),
             'triActuel' => $triResolu[0],
             'directionActuelle' => $triResolu[1],
         ]);
@@ -161,6 +162,30 @@ class TypeDepenseController extends Controller
         $type->forceDelete();
 
         return back()->with('succes', 'Catégorie de dépense supprimée définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUTES les catégories
+     * de dépenses corbeillées en un clic — même raisonnement que
+     * forceDestroy() ci-dessus (lignes App\Models\Depense forcément vides à
+     * ce stade, voir son docblock), appliqué à CHAQUE catégorie corbeillée
+     * plutôt qu'une seule.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('types_depenses', 'delete'), 403);
+
+        $types = TypeDepense::onlyTrashed()->with('depenses')->get();
+
+        foreach ($types as $type) {
+            foreach ($type->depenses as $depense) {
+                $depense->forceDelete();
+            }
+
+            $type->forceDelete();
+        }
+
+        return back()->with('succes', $types->count().' catégorie(s) de dépense supprimée(s) définitivement.');
     }
 
     /** @return array<string, mixed> */

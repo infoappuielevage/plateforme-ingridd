@@ -194,4 +194,32 @@ class TypeContratControllerTest extends TestCase
 
         $this->assertDatabaseMissing('types_contrats', ['id' => $type->id]);
     }
+
+    /**
+     * "Vider la corbeille" — demande explicite du client (voir le docblock
+     * de TypeContratController::viderCorbeille()) : purge TOUTES les
+     * catégories corbeillées en un clic, SAUF celles encore utilisées par au
+     * moins un contrat (même garde-fou que forceDestroy(), mais ignorée
+     * plutôt que de faire échouer toute l'opération — jamais d'abort_if()
+     * dans une boucle).
+     */
+    public function test_vider_la_corbeille_ignore_les_categories_encore_utilisees(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $typePurgeable = TypeContrat::factory()->create();
+        $typePurgeable->delete();
+
+        $typeEncoreUtilise = TypeContrat::factory()->create();
+        $contrat = Contrat::factory()->create(['type_contrat_id' => $typeEncoreUtilise->id]);
+        $contrat->delete();
+        $typeEncoreUtilise->delete();
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.types-contrats.corbeille.vider'))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('types_contrats', ['id' => $typePurgeable->id]);
+        $this->assertDatabaseHas('types_contrats', ['id' => $typeEncoreUtilise->id]);
+    }
 }

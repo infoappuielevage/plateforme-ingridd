@@ -79,6 +79,10 @@ class EtudiantController extends Controller
         return view('gestion.etudiants.index', [
             'etudiants' => $etudiants,
             'corbeille' => $corbeille,
+            // Ignore les filtres actifs — "Vider la corbeille" agit toujours
+            // sur TOUS les dossiers corbeillés, jamais seulement ceux affichés
+            // à l'écran (voir viderCorbeille()).
+            'corbeillePeutEtreVidee' => $corbeille && Etudiant::onlyTrashed()->exists(),
             'anneesAcademiques' => AnneeAcademique::query()->orderByDesc('libelle')->get(),
             'niveaux' => Niveau::query()->where('actif', true)->orderBy('ordre')->get(),
             'filieres' => Filiere::query()->where('actif', true)->orderBy('ordre')->get(),
@@ -485,6 +489,33 @@ class EtudiantController extends Controller
         $etudiantTrouve->forceDelete();
 
         return redirect()->route('gestion.etudiants.index', ['corbeille' => 1])->with('succes', 'Dossier étudiant supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les dossiers
+     * étudiant corbeillés en un clic — même principe que
+     * DocumentController::viderCorbeille(). Porte sur TOUTE la corbeille,
+     * jamais seulement la page affichée.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('etudiants', 'delete'), 403);
+
+        $etudiants = Etudiant::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($etudiants as $etudiant) {
+            foreach ($etudiant->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $etudiant->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.etudiants.index', ['corbeille' => 1])
+            ->with('succes', $etudiants->count().' dossier(s) étudiant supprimé(s) définitivement.');
     }
 
     /**

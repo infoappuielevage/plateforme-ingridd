@@ -15,6 +15,16 @@
             <a href="{{ route('gestion.types-depenses.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('types_depenses', 'delete'))
+                <form method="POST" action="{{ route('gestion.types-depenses.corbeille.vider') }}" class="d-inline"
+                      onsubmit="return confirm('Toutes les catégories de dépenses actuellement dans la corbeille seront supprimées définitivement. Cette action est irréversible. Continuer ?');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash3-fill"></i> Vider la corbeille
+                    </button>
+                </form>
+            @endif
         @else
             @if (\App\Support\ResourceAccess::can('types_depenses', 'delete'))
                 <a href="{{ route('gestion.types-depenses.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">

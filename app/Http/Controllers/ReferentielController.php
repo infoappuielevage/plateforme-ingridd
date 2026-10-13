@@ -128,6 +128,7 @@ class ReferentielController extends Controller
             'definition' => $definition,
             'items' => $items,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && $definition['modele']::onlyTrashed()->exists(),
             'triActuel' => $triResolu[0],
             'directionActuelle' => $triResolu[1],
         ]);
@@ -446,6 +447,37 @@ class ReferentielController extends Controller
         ]);
 
         $items = $definition['modele']::onlyTrashed()->whereIn('id', $donnees['ids'])->get();
+
+        $supprimes = 0;
+        $ignores = 0;
+        foreach ($items as $item) {
+            if ($this->encoreUtilise($item, $definition)) {
+                $ignores++;
+
+                continue;
+            }
+
+            $item->forceDelete();
+            $supprimes++;
+        }
+
+        return back()->with('succes', $this->messageGroupe($supprimes, 'supprimé(e)(s) définitivement', $ignores));
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les éléments
+     * corbeillés de CE référentiel en un clic — même principe que
+     * DocumentController::viderCorbeille(). MÊME garde-fou que
+     * forceDestroyGroupe() ci-dessus (encoreUtilise()) : un élément redevenu
+     * utilisé après sa mise à la corbeille est ignoré plutôt que de faire
+     * échouer toute l'opération.
+     */
+    public function viderCorbeille(string $referentiel): RedirectResponse
+    {
+        $definition = $this->definition($referentiel);
+        abort_unless(ResourceAccess::can($definition['cle'], 'delete'), 403);
+
+        $items = $definition['modele']::onlyTrashed()->get();
 
         $supprimes = 0;
         $ignores = 0;

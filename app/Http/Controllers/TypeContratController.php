@@ -40,6 +40,7 @@ class TypeContratController extends Controller
         return view('gestion.types-contrats.index', [
             'types' => $types,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && TypeContrat::onlyTrashed()->exists(),
             'triActuel' => $triResolu[0],
             'directionActuelle' => $triResolu[1],
         ]);
@@ -139,6 +140,40 @@ class TypeContratController extends Controller
         $type->forceDelete();
 
         return back()->with('succes', 'Catégorie de contrat supprimée définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUTES les catégories
+     * de contrat corbeillées en un clic — même principe que
+     * DocumentController::viderCorbeille(). MÊME garde-fou que forceDestroy()
+     * ci-dessus (une catégorie encore utilisée est ignorée plutôt que de
+     * faire échouer toute l'opération — jamais d'abort_if() dans une boucle).
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('types_contrats', 'delete'), 403);
+
+        $types = TypeContrat::onlyTrashed()->get();
+
+        $supprimes = 0;
+        $ignores = 0;
+        foreach ($types as $type) {
+            if ($type->contrats()->withTrashed()->exists()) {
+                $ignores++;
+
+                continue;
+            }
+
+            $type->forceDelete();
+            $supprimes++;
+        }
+
+        $message = "{$supprimes} catégorie(s) de contrat supprimée(s) définitivement.";
+        if ($ignores > 0) {
+            $message .= " {$ignores} ignorée(s) car encore utilisée(s) par au moins un contrat.";
+        }
+
+        return back()->with('succes', $message);
     }
 
     /** @return array<string, mixed> */

@@ -42,6 +42,7 @@ class TypePieceEtudiantController extends Controller
         return view('gestion.types-pieces-etudiants.index', [
             'types' => $types,
             'corbeille' => $corbeille,
+            'corbeillePeutEtreVidee' => $corbeille && TypePieceEtudiant::onlyTrashed()->exists(),
             'triActuel' => $triResolu[0],
             'directionActuelle' => $triResolu[1],
         ]);
@@ -141,6 +142,26 @@ class TypePieceEtudiantController extends Controller
         TypePieceEtudiant::onlyTrashed()->findOrFail($id)->forceDelete();
 
         return back()->with('succes', 'Type de pièce supprimé définitivement.');
+    }
+
+    /**
+     * "Vider la corbeille" : supprime définitivement TOUS les types de pièce
+     * corbeillés en un clic — même principe que DocumentController::
+     * viderCorbeille(). Même raisonnement que forceDestroy() ci-dessus
+     * (aucune nouvelle pièce déposée n'a pu avoir lieu entre-temps, voir
+     * destroy()) : pas de garde-fou nécessaire ici non plus.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('types_pieces_etudiants', 'delete'), 403);
+
+        $types = TypePieceEtudiant::onlyTrashed()->get();
+
+        foreach ($types as $type) {
+            $type->forceDelete();
+        }
+
+        return back()->with('succes', $types->count().' type(s) de pièce supprimé(s) définitivement.');
     }
 
     protected function valider(Request $request, ?TypePieceEtudiant $type): array

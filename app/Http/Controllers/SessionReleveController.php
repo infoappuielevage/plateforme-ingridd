@@ -282,6 +282,34 @@ class SessionReleveController extends Controller
     }
 
     /**
+     * "Vider la corbeille" : supprime définitivement TOUTES les sessions de
+     * relevé corbeillées en un clic — même principe que DocumentController::
+     * viderCorbeille() (voir aussi SessionDeliberationController::
+     * viderCorbeille(), MIROIR volontaire). Porte sur TOUTE la corbeille,
+     * jamais seulement la page affichée.
+     */
+    public function viderCorbeille(): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+
+        $sessions = SessionReleve::onlyTrashed()->with('fichiers')->get();
+
+        foreach ($sessions as $session) {
+            foreach ($session->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $session->forceDelete();
+        }
+
+        return redirect()
+            ->route('gestion.sessions-releves.index', ['corbeille' => 1])
+            ->with('succes', $sessions->count().' session(s) de relevé supprimée(s) définitivement.');
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de sessions (cases à
      * cocher, voir resources/views/gestion/sessions-releves/index.blade.php)
      * mises à la corbeille en une seule action — MÊME PRINCIPE que
