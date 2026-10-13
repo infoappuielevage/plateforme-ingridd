@@ -229,4 +229,158 @@ class DashboardControllerTest extends TestCase
             ->assertSee('Documents récemment ajoutés')
             ->assertSee('contrat-recent.pdf');
     }
+
+    /**
+     * Faille de sécurité corrigée sur demande explicite du client ("revoir
+     * la sécurité pour éviter l'accessibilité à des pages confidentielles
+     * sans autorisation") : rien ici ne vérifiait auparavant le droit
+     * "documents" -> "Voir" — un rôle n'en ayant AUCUN (ex. les rôles
+     * "Direction"/"Secrétariat"/... créés sans permission par
+     * database/seeders/RoleSeeder.php, en attendant d'être configurés)
+     * voyait quand même un nom de fichier réel dans "Documents récemment
+     * ajoutés" ainsi que la carte "Documents" rien qu'en arrivant sur son
+     * tableau de bord.
+     */
+    public function test_les_documents_recents_et_la_carte_documents_sont_masques_sans_droit_de_vue(): void
+    {
+        Storage::fake('sauvegardes');
+
+        Role::query()->create([
+            'slug' => 'sans_droits_documents_tableau_de_bord',
+            'name' => 'Sans droits documents',
+            'permissions' => ['documents' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false]],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'sans_droits_documents_tableau_de_bord']);
+
+        Document::factory()->create(['nom_original' => 'confidentiel.pdf']);
+
+        $this->actingAs($utilisateur)
+            ->get(route('gestion.dashboard'))
+            ->assertOk()
+            ->assertDontSee('confidentiel.pdf')
+            ->assertViewHas('cartes', function (array $cartes) {
+                $this->assertNull(collect($cartes)->firstWhere('label', 'Documents'));
+                $this->assertNull(collect($cartes)->firstWhere('label', 'Diplômes/attestations non retirés'));
+
+                return true;
+            })
+            ->assertViewHas('graphiques', fn (array $graphiques) => $graphiques === []);
+    }
+
+    /**
+     * Les pièces d'un dossier étudiant/d'un PV de soutenance... (voir
+     * App\Support\TypesEcranDedie) ne doivent pas non plus influencer les
+     * chiffres/graphiques visibles avec le seul droit générique "documents"
+     * — même correction que DocumentController::index().
+     */
+    public function test_les_documents_dun_type_a_ecran_dedie_sont_exclus_des_chiffres_et_graphiques(): void
+    {
+        Storage::fake('sauvegardes');
+
+        $admin = User::factory()->admin()->create();
+        $typeDossierEtudiant = TypeDocument::factory()->create(['code' => 'DOSSIER_ETUDIANT', 'libelle' => 'Dossier étudiant']);
+        $typeContrat = TypeDocument::factory()->create(['code' => 'CONTRAT', 'libelle' => 'Contrats']);
+
+        Document::factory()->create(['type_document_id' => $typeDossierEtudiant->id, 'nom_original' => 'cnib-etudiant.pdf']);
+        Document::factory()->create(['type_document_id' => $typeContrat->id, 'nom_original' => 'contrat.pdf']);
+
+        $this->actingAs($admin)
+            ->get(route('gestion.dashboard'))
+            ->assertOk()
+            ->assertDontSee('cnib-etudiant.pdf')
+            ->assertSee('contrat.pdf')
+            ->assertViewHas('cartes', function (array $cartes) {
+                $carte = collect($cartes)->firstWhere('label', 'Documents');
+                $this->assertSame(1, $carte['valeur']);
+
+                return true;
+            })
+            ->assertViewHas('graphiques', function (array $graphiques) {
+                $this->assertNotContains('Dossier étudiant', $graphiques['parType']['labels']);
+                $this->assertContains('Contrats', $graphiques['parType']['labels']);
+
+                return true;
+            });
+    }
+
+    /**
+     * "Mon compte" — demande explicite du client : la personne connectée
+     * doit voir son nom, son rôle et ses droits d'accès réels directement
+     * sur le tableau de bord (voir DashboardController::monCompte()).
+     */
+    public function test_mon_compte_affiche_le_nom_et_le_role_de_lutilisateur_connecte(): void
+    {
+        Storage::fake('sauvegardes');
+
+        Role::query()->create([
+            'slug' => 'secretariat_test',
+            'name' => 'Secrétariat',
+            'permissions' => ['documents' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false]],
+        ]);
+        $utilisateur = User::factory()->create(['name' => 'Fatou Traoré', 'role' => 'secretariat_test']);
+
+        $this->actingAs($utilisateur)
+            ->get(route('gestion.dashboard'))
+            ->assertOk()
+            ->assertSee('Fatou Traoré')
+            ->assertSee('Secrétariat')
+            ->assertViewHas('monCompte', function (array $monCompte) {
+                $this->assertFalse($monCompte['estAdmin']);
+                $this->assertTrue($monCompte['permissions']['documents']['view']);
+                $this->assertFalse($monCompte['permissions']['documents']['create']);
+
+                return true;
+            });
+    }
+
+    /** Un administrateur n'a pas de ligne de permissions à afficher : juste la mention "accès complet" (voir ResourceAccess::can(), qui lui donne toujours tous les droits). */
+    public function test_mon_compte_indique_un_acces_complet_pour_un_administrateur(): void
+    {
+        Storage::fake('sauvegardes');
+
+        $admin = User::factory()->admin()->create(['name' => 'Admin Test']);
+
+        $this->actingAs($admin)
+            ->get(route('gestion.dashboard'))
+            ->assertOk()
+            ->assertSee('Accès complet à toutes les fonctionnalités de la plateforme.')
+            ->assertViewHas('monCompte', fn (array $monCompte) => $monCompte['estAdmin'] === true);
+    }
+
+    /**
+     * Calendrier du mois en cours — demande explicite du client, volontairement
+     * "simple, sans évènements" (voir DashboardController::calendrier()).
+     */
+    public function test_le_calendrier_affiche_le_mois_en_cours_avec_le_jour_du_jour_marque(): void
+    {
+        Storage::fake('sauvegardes');
+
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('gestion.dashboard'))
+            ->assertOk()
+            ->assertSee(ucfirst(now()->translatedFormat('F Y')))
+            ->assertViewHas('calendrier', function (array $calendrier) {
+                $jours = collect($calendrier['semaines'])->flatten(1)->filter();
+
+                // Toutes les semaines ont 7 cases (jours réels ou cases vides).
+                foreach ($calendrier['semaines'] as $semaine) {
+                    $this->assertCount(7, $semaine);
+                }
+
+                // Exactement un jour est marqué "aujourd'hui", et c'est le bon.
+                $aujourdhui = $jours->filter(fn (array $jour) => $jour['estAujourdhui']);
+                $this->assertCount(1, $aujourdhui);
+                $this->assertSame(now()->day, $aujourdhui->first()['numero']);
+
+                // Tous les jours du mois sont bien présents, une seule fois chacun.
+                $this->assertSame(
+                    range(1, now()->daysInMonth),
+                    $jours->pluck('numero')->sort()->values()->all()
+                );
+
+                return true;
+            });
+    }
 }

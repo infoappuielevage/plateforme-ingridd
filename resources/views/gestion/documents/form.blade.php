@@ -159,8 +159,9 @@
 </form>
 </div>
 </div>
+@endsection
 
-@push('scripts')
+@section('scripts')
 <script>
     const sousTypesParType = @json($sousTypes->map(fn ($groupe) => $groupe->map(fn ($st) => ['id' => $st->id, 'libelle' => $st->libelle])->values()));
     const semestresParNiveau = @json($semestresParNiveau);
@@ -252,5 +253,4 @@
     peuplerSemestres(parseInt(niveauSelect.value, 10) || null, semestreInitial);
     actualiserAffichage();
 </script>
-@endpush
 @endsection

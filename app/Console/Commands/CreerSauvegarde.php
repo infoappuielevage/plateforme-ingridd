@@ -94,7 +94,27 @@ class CreerSauvegarde extends Command
         // si deux sauvegardes sont lancées dans la même seconde (double-clic,
         // nouvelle tentative après une manuelle juste après la planifiée...).
         $nomFichier = 'sauvegarde-'.now()->format('Y-m-d-His').'-'.substr(uniqid(), -6).'.zip';
-        $cheminTemporaire = tempnam(sys_get_temp_dir(), 'ingridd-sauvegarde-');
+        // dossierTemporaire() plutôt que sys_get_temp_dir() (revue de
+        // sécurité demandée par le client) : le dossier temp système est
+        // PARTAGÉ par tous les comptes/applications de la machine (sur un
+        // serveur mutualisé en particulier), alors que storage/app/ reste
+        // déjà hors d'accès web (voir le docblock de la classe et
+        // config/filesystems.php pour les disques "documents"/"sauvegardes")
+        // — une archive complète base+documents n'y transite donc jamais,
+        // même brièvement, hors du périmètre déjà protégé de l'application.
+        $dossierTemporaire = $this->dossierTemporaire();
+        // Reliquats d'une exécution précédente interrompue (plantage, coupure
+        // de courant, redémarrage du serveur en plein milieu d'une sauvegarde
+        // — voir aussi le bug ZipArchive corrigé juste en dessous, qui en
+        // laissait justement derrière lui avant ce correctif). Sans risque de
+        // supprimer le fichier d'une AUTRE exécution en cours : cette
+        // commande n'est jamais censée tourner deux fois en même temps (un
+        // seul admin, déclenchée depuis Administration > Sauvegardes ou la
+        // tâche planifiée quotidienne) — tout ce qui traîne ici au démarrage
+        // d'une nouvelle sauvegarde est forcément un reliquat du passé.
+        $this->nettoyerDebrisAnciens($dossierTemporaire);
+
+        $cheminTemporaire = tempnam($dossierTemporaire, 'ingridd-sauvegarde-');
 
         $archive = new ZipArchive;
 
@@ -114,12 +134,26 @@ class CreerSauvegarde extends Command
 
         $archive->close();
 
+        // CAUSE RÉELLE du fichier .zip temporaire qui restait dans storage/
+        // app/sauvegardes-tmp après une sauvegarde pourtant réussie (signalé
+        // par le client) : sous Windows, ZipArchive::close() ne relâche PAS
+        // immédiatement le verrou système sur le fichier — tant que l'objet
+        // PHP $archive reste en mémoire (ici, jusqu'à la fin de cette
+        // méthode), Windows refuse de le supprimer ("fichier utilisé par un
+        // autre processus"). D'où l'échec, déterministe et reproductible à
+        // chaque sauvegarde (pas un simple antivirus occasionnel) : le
+        // unlink() plus bas arrivait alors que $archive détenait encore le
+        // fichier. `unset()` ici force PHP à détruire l'objet — et donc
+        // Windows à relâcher son verrou — AVANT qu'on tente de lire puis
+        // supprimer ce même fichier juste après.
+        unset($archive);
+
         if ($this->cheminDumpTemporaire) {
-            @unlink($this->cheminDumpTemporaire);
+            $this->supprimerFichierTemporaire($this->cheminDumpTemporaire);
         }
 
         if (! $baseIncluse) {
-            @unlink($cheminTemporaire);
+            $this->supprimerFichierTemporaire($cheminTemporaire);
             $this->error('Sauvegarde annulée : la base de données n\'a pas pu être incluse (voir le message ci-dessus). Les documents seuls ne suffisent pas à restaurer la plateforme.');
 
             return self::FAILURE;
@@ -138,7 +172,7 @@ class CreerSauvegarde extends Command
         if (is_resource($flux)) {
             fclose($flux);
         }
-        unlink($cheminTemporaire);
+        $this->supprimerFichierTemporaire($cheminTemporaire);
 
         $this->info("Sauvegarde créée : {$nomFichier}");
 
@@ -191,7 +225,10 @@ class CreerSauvegarde extends Command
         $config = config('database.connections.mysql');
         $binaire = Parametre::actuel()->mysqldump_chemin ?: 'mysqldump';
 
-        $cheminDump = tempnam(sys_get_temp_dir(), 'ingridd-mysqldump-');
+        // Même raisonnement que dans creerLarchive() : hors du dossier temp
+        // système partagé, le dump SQL (données complètes de la plateforme
+        // en clair) ne transite que dans storage/app/, déjà privé.
+        $cheminDump = tempnam($this->dossierTemporaire(), 'ingridd-mysqldump-');
 
         $commande = [
             $binaire,
@@ -232,21 +269,21 @@ class CreerSauvegarde extends Command
             if (! $processus->isSuccessful()) {
                 $this->error("Échec de mysqldump : ".trim($processus->getErrorOutput() ?: $processus->getOutput()));
                 $this->avertirCheminMysqldump();
-                @unlink($cheminDump);
+                $this->supprimerFichierTemporaire($cheminDump);
 
                 return false;
             }
         } catch (ProcessException $exception) {
             $this->error("Impossible de lancer \"{$binaire}\" : ".$exception->getMessage());
             $this->avertirCheminMysqldump();
-            @unlink($cheminDump);
+            $this->supprimerFichierTemporaire($cheminDump);
 
             return false;
         }
 
         if (! is_file($cheminDump) || filesize($cheminDump) === 0) {
             $this->error('mysqldump n\'a produit aucun contenu.');
-            @unlink($cheminDump);
+            $this->supprimerFichierTemporaire($cheminDump);
 
             return false;
         }
@@ -269,6 +306,83 @@ class CreerSauvegarde extends Command
         $this->error('Connexion "'.config('database.default').'" non prise en charge pour la sauvegarde automatique de la base (seuls sqlite et mysql le sont).');
 
         return false;
+    }
+
+    /**
+     * Dossier temporaire privé pour les fichiers de travail de cette
+     * commande (archive .zip en cours de constitution, dump mysqldump) —
+     * voir les deux appels à tempnam() ci-dessus. Créé à la demande (pas de
+     * migration/seeder pour un simple dossier) : `storage/app/` est déjà
+     * hors d'accès web dans Laravel, contrairement au dossier temp système
+     * (sys_get_temp_dir()), partagé par toutes les applications de la
+     * machine.
+     */
+    protected function dossierTemporaire(): string
+    {
+        $dossier = storage_path('app/sauvegardes-tmp');
+
+        if (! is_dir($dossier)) {
+            mkdir($dossier, 0755, true);
+        }
+
+        return $dossier;
+    }
+
+    /**
+     * Supprime un fichier de travail (archive .zip temporaire, dump
+     * mysqldump) avec plusieurs tentatives.
+     *
+     * La cause PRINCIPALE du fichier qui restait coincé dans storage/app/
+     * sauvegardes-tmp est corrigée à la source (voir le `unset($archive)`
+     * dans creerLarchive()) : cette méthode reste malgré tout prudente, par
+     * simple défense en profondeur — un antivirus qui viendrait de scanner
+     * le fichier qu'on referme peut, lui aussi, en détenir un verrou bref
+     * sous Windows (ERROR_SHARING_VIOLATION), un faux positif qui disparaît
+     * en général en quelques dizaines de millisecondes.
+     *
+     * Ne fait jamais échouer la commande elle-même si la suppression finit
+     * par ne pas aboutir : à ce stade l'archive est déjà bien enregistrée
+     * sur le disque `sauvegardes`, un fichier de travail qui traîne reste
+     * un oubli de ménage, pas une sauvegarde manquée — mais c'est quand
+     * même journalisé pour ne pas laisser le dossier grossir en silence
+     * (voir aussi nettoyerDebrisAnciens(), qui rattrape malgré tout un tel
+     * reliquat à la sauvegarde suivante).
+     */
+    protected function supprimerFichierTemporaire(string $chemin): void
+    {
+        for ($tentative = 0; $tentative < 5; $tentative++) {
+            if (! is_file($chemin) || @unlink($chemin)) {
+                return;
+            }
+
+            usleep(100_000); // 100 ms
+        }
+
+        report(new \RuntimeException("Impossible de supprimer le fichier temporaire de sauvegarde : {$chemin}"));
+    }
+
+    /**
+     * Supprime, AVANT de démarrer une nouvelle sauvegarde, tout fichier de
+     * travail qu'une exécution précédente aurait laissé derrière elle
+     * (plantage, coupure de courant, redémarrage du serveur en plein
+     * milieu...) — par exemple un reliquat du bug ZipArchive corrigé
+     * ci-dessus, pour les sauvegardes déjà produites avant ce correctif.
+     *
+     * Volontairement inconditionnel (pas de filtre par âge ni par préfixe
+     * de nom) : cette commande n'est jamais censée tourner deux fois en
+     * même temps (un seul admin, déclenchée depuis Administration >
+     * Sauvegardes ou la tâche planifiée quotidienne) — tout fichier présent
+     * ici au démarrage d'une nouvelle sauvegarde est forcément un reliquat
+     * d'une exécution passée, jamais un fichier en cours d'utilisation par
+     * une autre exécution.
+     */
+    protected function nettoyerDebrisAnciens(string $dossier): void
+    {
+        foreach (glob($dossier.DIRECTORY_SEPARATOR.'*') ?: [] as $chemin) {
+            if (is_file($chemin)) {
+                $this->supprimerFichierTemporaire($chemin);
+            }
+        }
     }
 
     /** Ajoute récursivement tous les fichiers d'un dossier à l'archive, sous le préfixe donné. */

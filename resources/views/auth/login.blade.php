@@ -26,7 +26,7 @@
 
             <div class="mb-3">
                 <label class="form-label">Mot de passe</label>
-                <input type="password" name="password" class="form-control" required>
+                <x-champ-mot-de-passe name="password" required />
             </div>
 
             <div class="form-check mb-3">
@@ -36,6 +36,10 @@
 
             <button type="submit" class="btn btn-primary w-100">Se connecter</button>
         </form>
+
+        <div class="text-center mt-3">
+            <a href="{{ route('mot-de-passe.oublie') }}" class="small">Mot de passe oublié ?</a>
+        </div>
     </div>
 </div>
 @endsection

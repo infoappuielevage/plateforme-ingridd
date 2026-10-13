@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ListeTriable;
+use App\Http\Controllers\Concerns\VerifieVerrouillage;
 use App\Models\AnneeAcademique;
 use App\Models\ChampSupplementaire;
 use App\Models\Document;
@@ -12,6 +14,7 @@ use App\Models\SessionDeliberation;
 use App\Models\SessionDeliberationFichier;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
+use App\Support\FichiersExcel;
 use App\Support\ResourceAccess;
 use App\Support\Semestres;
 use App\Support\TypesFichiers;
@@ -21,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Gestion des PV de délibération — nouvelle structure dédiée (demande
@@ -39,6 +43,8 @@ use Illuminate\Validation\Rule;
  */
 class SessionDeliberationController extends Controller
 {
+    use ListeTriable, VerifieVerrouillage;
+
     public function __construct()
     {
         abort_unless(ResourceAccess::can('sessions_deliberation', 'view'), 403);
@@ -48,22 +54,120 @@ class SessionDeliberationController extends Controller
     {
         $corbeille = $request->boolean('corbeille');
 
-        $requete = SessionDeliberation::query()
-            ->with(['anneeAcademique', 'filiere', 'fichiers'])
-            ->when($corbeille, fn ($q) => $q->onlyTrashed())
-            ->when($request->filled('annee_academique_id'), fn ($q) => $q->where('annee_academique_id', $request->integer('annee_academique_id')))
-            ->when($request->filled('cycle'), fn ($q) => $q->where('cycle', $request->string('cycle')))
-            ->when($request->filled('filiere_id'), fn ($q) => $q->where('filiere_id', $request->integer('filiere_id')))
-            ->latest('created_at');
+        $sessions = $this->requeteListe($request, $corbeille)->paginate(8)->withQueryString();
+
+        // [clé, direction] résolus SANS requête (voir ListeTriable) pour que
+        // la vue marque la colonne active dans l'en-tête — même principe que
+        // PvSoutenanceController::index().
+        [$triActuel, $directionActuelle] = $this->resoudreTri($request, $this->colonnesTriables(), 'created_at', 'desc');
 
         return view('gestion.sessions-deliberation.index', [
-            'sessions' => $requete->paginate(20)->withQueryString(),
+            'sessions' => $sessions,
             'corbeille' => $corbeille,
             'corbeillePeutEtreVidee' => $corbeille && SessionDeliberation::onlyTrashed()->exists(),
             'anneesAcademiques' => AnneeAcademique::query()->orderByDesc('libelle')->get(),
             'filieres' => Filiere::query()->orderBy('ordre')->get(),
-            'cycles' => SessionDeliberation::CYCLES,
+            'onglets' => ['tous' => 'Tous'] + SessionDeliberation::CYCLES,
+            'cycleActif' => $this->ongletCycleValide($request),
+            'triActuel' => $triActuel,
+            'directionActuelle' => $directionActuelle,
         ]);
+    }
+
+    /**
+     * Export Excel (.xlsx) de la liste — demandé par le client, respecte
+     * EXACTEMENT les mêmes filtres que l'écran (voir requeteListe()
+     * ci-dessous, partagée avec index()), simplement sans pagination.
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $corbeille = $request->boolean('corbeille');
+        $sessions = $this->requeteListe($request, $corbeille)->get();
+
+        $lignes = $sessions->map(fn (SessionDeliberation $session) => [
+            $session->anneeAcademique?->libelle,
+            $session->sessionLibelle(),
+            $session->cycleLibelle(),
+            $session->filiere?->libelle,
+            $session->description,
+            $session->created_at?->format('d/m/Y H:i'),
+        ]);
+
+        return FichiersExcel::exporter(
+            'sessions-deliberation-'.now()->format('Y-m-d').'.xlsx',
+            ['Année académique', 'Session', 'Cycle', 'Filière', 'Description', 'Créée le'],
+            $lignes
+        );
+    }
+
+    /** @return \Illuminate\Database\Eloquent\Builder<SessionDeliberation> */
+    protected function requeteListe(Request $request, bool $corbeille): \Illuminate\Database\Eloquent\Builder
+    {
+        $cycle = $this->ongletCycleValide($request);
+
+        $query = SessionDeliberation::query()
+            ->with(['anneeAcademique', 'filiere', 'fichiers'])
+            ->when($corbeille, fn ($q) => $q->onlyTrashed())
+            ->when($request->filled('annee_academique_id'), fn ($q) => $q->where('annee_academique_id', $request->integer('annee_academique_id')))
+            // Onglet "cycle" (voir index()/resources/views/gestion/sessions-deliberation/index.blade.php)
+            // — remplace l'ancien filtre "Cycle" à liste déroulante, même
+            // principe que PvSoutenanceController::requeteListe() pour
+            // "niveau" (demande explicite du client : "fait la même chose
+            // que ce qu'on a fait pour le PV de soutenance pour les
+            // Cycle..."). 'tous' = aucun filtre.
+            ->when($cycle !== 'tous', fn ($q) => $q->where('cycle', $cycle))
+            ->when($request->filled('filiere_id'), fn ($q) => $q->where('filiere_id', $request->integer('filiere_id')));
+
+        $this->appliquerTri($query, $this->colonnesTriables(), $this->resoudreTri($request, $this->colonnesTriables(), 'created_at', 'desc'));
+
+        return $query;
+    }
+
+    /**
+     * Colonnes triables de la liste (voir App\Http\Controllers\Concerns\ListeTriable)
+     * — "Année académique" et "Filière" sont des relations, donc une
+     * sous-requête corrélée plutôt qu'un orderBy direct (même principe que
+     * PvSoutenanceController::colonnesTriables() pour "Filière"). "Fichiers
+     * déposés" est un compteur calculé (withCount), pas une colonne réelle.
+     * "created_at" n'a pas de colonne visible dédiée (pas de "Créée le" dans
+     * ce tableau) mais reste le tri par défaut, identique au ->latest(
+     * 'created_at') qu'elle remplace.
+     *
+     * @return array<string, string|\Closure>
+     */
+    protected function colonnesTriables(): array
+    {
+        return [
+            'annee_academique' => fn ($query, string $direction) => $query->orderBy(
+                AnneeAcademique::select('libelle')->whereColumn('annees_academiques.id', 'sessions_deliberation.annee_academique_id'),
+                $direction
+            ),
+            'session' => 'session',
+            'cycle' => 'cycle',
+            'filiere' => fn ($query, string $direction) => $query->orderBy(
+                Filiere::select('libelle')->whereColumn('filieres.id', 'sessions_deliberation.filiere_id'),
+                $direction
+            ),
+            'fichiers_deposes' => function ($query, string $direction) {
+                $query->withCount(['fichiers as fichiers_deposes_count' => fn ($q) => $q->whereNotNull('document_id')])
+                    ->orderBy('fichiers_deposes_count', $direction);
+            },
+            'created_at' => 'created_at',
+        ];
+    }
+
+    /**
+     * Onglet "cycle" valide pour la liste — 'tous' (aucun filtre) ou l'une
+     * des valeurs de SessionDeliberation::CYCLES. Un lien externe/favori
+     * obsolète pointant vers une valeur inconnue retombe silencieusement sur
+     * 'tous' plutôt qu'une erreur SQL — même principe que
+     * PvSoutenanceController::ongletNiveauValide().
+     */
+    protected function ongletCycleValide(Request $request): string
+    {
+        $valeur = $request->string('cycle')->toString();
+
+        return array_key_exists($valeur, SessionDeliberation::CYCLES) ? $valeur : 'tous';
     }
 
     public function create(): View
@@ -191,9 +295,14 @@ class SessionDeliberationController extends Controller
      * Suppression définitive : supprime aussi (mise à la corbeille) chaque
      * Document encore attaché à une case de cette session — sans quoi ces
      * documents resteraient en base sans plus aucune case pour y accéder
-     * depuis cet écran (ils restent néanmoins visibles/récupérables depuis
-     * Documents > Tous les documents, comme n'importe quel document mis à
-     * la corbeille).
+     * depuis cet écran. Ils ne sont PLUS récupérables depuis Documents >
+     * Tous les documents (voir App\Support\TypesEcranDedie et le docblock
+     * de DocumentController::index() : un document d'écran dédié, PV de
+     * délibération compris, en est désormais exclu, même corbeillé — faille
+     * de sécurité corrigée, "revoir la sécurité pour éviter l'accessibilité
+     * à des pages confidentielles sans autorisation") ; seul "Vider la
+     * corbeille" (DocumentController::viderCorbeille(), volontairement non
+     * filtré) peut encore les effacer définitivement, en nettoyage global.
      */
     public function forceDestroy(int $sessionDeliberation): RedirectResponse
     {
@@ -213,6 +322,80 @@ class SessionDeliberationController extends Controller
     }
 
     /**
+     * Mise à la corbeille groupée : sélection multiple de sessions (cases à
+     * cocher, voir resources/views/gestion/sessions-deliberation/index.blade.php)
+     * mises à la corbeille en une seule action — MÊME PRINCIPE que
+     * DocumentController::mettreCorbeilleGroupee(), sur demande explicite du
+     * client ("permettre de faire des sélections pour des actions sur les
+     * tableaux différents").
+     */
+    public function mettreCorbeilleGroupee(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*' => ['integer'],
+        ]);
+
+        $sessions = SessionDeliberation::query()->whereIn('id', $donnees['sessions'])->get();
+
+        foreach ($sessions as $session) {
+            $session->delete();
+        }
+
+        return back()->with('succes', $sessions->count().' session(s) de délibération mise(s) à la corbeille.');
+    }
+
+    /** Restauration groupée — pendant de mettreCorbeilleGroupee() pour la corbeille. */
+    public function restaurerGroupe(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*' => ['integer'],
+        ]);
+
+        $sessions = SessionDeliberation::onlyTrashed()->whereIn('id', $donnees['sessions'])->get();
+
+        foreach ($sessions as $session) {
+            $session->restore();
+        }
+
+        return back()->with('succes', $sessions->count().' session(s) de délibération restaurée(s).');
+    }
+
+    /**
+     * Suppression définitive groupée — MÊME RAISONNEMENT que forceDestroy()
+     * ci-dessus : chaque document encore attaché à une case est mis à la
+     * corbeille AVANT de supprimer la session elle-même.
+     */
+    public function forceDestroyGroupe(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*' => ['integer'],
+        ]);
+
+        $sessions = SessionDeliberation::onlyTrashed()->with('fichiers')->whereIn('id', $donnees['sessions'])->get();
+
+        foreach ($sessions as $session) {
+            foreach ($session->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $session->forceDelete();
+        }
+
+        return back()->with('succes', $sessions->count().' session(s) de délibération supprimée(s) définitivement.');
+    }
+
+    /**
      * Dépose (ou remplace) le fichier d'UNE case. Crée un vrai
      * App\Models\Document derrière (voir le docblock de la classe) — s'il y
      * en avait déjà un, l'ancien est mis à la corbeille (jamais supprimé
@@ -222,6 +405,11 @@ class SessionDeliberationController extends Controller
     {
         abort_unless(ResourceAccess::can('sessions_deliberation', 'edit'), 403);
         abort_if($fichier->session_deliberation_id !== $sessionDeliberation->id, 404);
+
+        $reponse = $this->refuserSiVerrouille($fichier->document);
+        if ($reponse) {
+            return $reponse;
+        }
 
         // `type_document_id` est obligatoire (NOT NULL, restrictOnDelete) sur
         // App\Models\Document — un renommage/une suppression malencontreuse
@@ -275,6 +463,11 @@ class SessionDeliberationController extends Controller
     {
         abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
         abort_if($fichier->session_deliberation_id !== $sessionDeliberation->id, 404);
+
+        $reponse = $this->refuserSiVerrouille($fichier->document);
+        if ($reponse) {
+            return $reponse;
+        }
 
         if ($fichier->document_id) {
             Document::query()->find($fichier->document_id)?->delete();

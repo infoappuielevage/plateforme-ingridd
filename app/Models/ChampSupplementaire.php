@@ -85,15 +85,19 @@ class ChampSupplementaire extends Model
 
     /**
      * Valeurs possibles pour `cycles` — union de SessionDeliberation::CYCLES
-     * et du "bts" propre au PV de soutenance (voir le docblock de la classe).
-     * BTS en tête, dans l'ordre donné par le client (BTS, Licence, Master,
-     * Doctorat).
+     * et des niveaux "bts"/"dts" propres au PV de soutenance (voir le
+     * docblock de la classe). BTS et DTS en tête (cycles courts équivalents,
+     * voir App\Models\PvSoutenance::NIVEAU_DTS), dans l'ordre donné par le
+     * client (BTS, DTS, Licence, Master, Doctorat).
      *
      * @return array<string, string>
      */
     public static function cyclesDisponibles(): array
     {
-        return [PvSoutenance::NIVEAU_BTS => 'BTS'] + SessionDeliberation::CYCLES;
+        return [
+            PvSoutenance::NIVEAU_BTS => 'BTS',
+            PvSoutenance::NIVEAU_DTS => 'DTS',
+        ] + SessionDeliberation::CYCLES;
     }
 
     /** Libellés lisibles des cycles concernés (ex. "Licence, Doctorat"), pour l'affichage dans la liste. */

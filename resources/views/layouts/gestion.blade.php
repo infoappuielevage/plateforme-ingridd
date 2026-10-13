@@ -39,6 +39,15 @@
 @php
     $utilisateurConnecte = auth()->user();
 
+    // Cloche de notifications (voir App\Http\Controllers\NotificationController
+    // et resources/views/gestion/notifications/index.blade.php) — demande
+    // explicite du client. Les 8 plus récentes seulement ici (même limite
+    // que "Documents récemment ajoutés" sur le tableau de bord) : la liste
+    // complète, paginée, reste à "Voir toutes mes notifications" plus bas
+    // dans le menu déroulant.
+    $notificationsRecentes = $utilisateurConnecte->notifications()->latest()->limit(8)->get();
+    $nombreNotificationsNonLues = $utilisateurConnecte->unreadNotifications()->count();
+
     // Menu "Secrétariat" : une entrée par type de document "épinglé" (voir
     // App\Models\TypeDocument::$epingle_secretariat) — remplace l'ancien
     // menu Filament construit dans AdminPanelProvider, désormais piloté
@@ -112,7 +121,26 @@
         ['cle' => 'niveaux', 'icone' => 'bi-bar-chart-steps', 'label' => 'Niveaux', 'url' => route('gestion.referentiels.index', ['referentiel' => 'niveaux']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'niveaux'],
         ['cle' => 'annees_academiques', 'icone' => 'bi-calendar-range-fill', 'label' => 'Années académiques', 'url' => route('gestion.referentiels.index', ['referentiel' => 'annees-academiques']), 'actif' => request()->routeIs('gestion.referentiels.*') && request()->route('referentiel') === 'annees-academiques'],
         ['cle' => 'champs_supplementaires', 'icone' => 'bi-file-earmark-plus-fill', 'label' => 'Champs supplémentaires', 'url' => route('gestion.champs-supplementaires.index'), 'actif' => request()->routeIs('gestion.champs-supplementaires.*')],
+        ['cle' => 'types_pieces_etudiants', 'icone' => 'bi-folder2-open', 'label' => 'Types de pièces (étudiant)', 'url' => route('gestion.types-pieces-etudiants.index'), 'actif' => request()->routeIs('gestion.types-pieces-etudiants.*')],
+        ['cle' => 'types_depenses', 'icone' => 'bi-credit-card-2-front-fill', 'label' => 'Catégories de dépenses', 'url' => route('gestion.types-depenses.index'), 'actif' => request()->routeIs('gestion.types-depenses.*')],
+        ['cle' => 'types_contrats', 'icone' => 'bi-vector-pen', 'label' => 'Catégories de contrats', 'url' => route('gestion.types-contrats.index'), 'actif' => request()->routeIs('gestion.types-contrats.*')],
     ])->filter(fn (array $ref) => \App\Support\ResourceAccess::can($ref['cle'], 'view'));
+
+    // Lien direct de la sidebar vers "Gestion des dépenses" (voir plus bas) :
+    // mène directement à la première catégorie active plutôt qu'à la route
+    // d'accueil "/depenses" (simple redirection) — même raison que le lien
+    // "Gestion des recettes" ci-dessous (évite un aller-retour HTTP inutile).
+    // null si aucune catégorie active n'existe encore (base pas encore
+    // seedée) : le lien est alors simplement masqué (voir plus bas).
+    $premiereCategorieDepense = \App\Support\ResourceAccess::can('depenses', 'view')
+        ? \App\Models\TypeDepense::query()->where('actif', true)->orderBy('ordre')->first()
+        : null;
+
+    // Lien direct de la sidebar vers "Gestion des contrats" — même principe
+    // que $premiereCategorieDepense ci-dessus.
+    $premiereCategorieContrat = \App\Support\ResourceAccess::can('contrats', 'view')
+        ? \App\Models\TypeContrat::query()->where('actif', true)->orderBy('ordre')->first()
+        : null;
 @endphp
 
 <div class="app-shell">
@@ -133,7 +161,17 @@
 
             @if (\App\Support\ResourceAccess::can('documents', 'view'))
                 <div class="sidebar-group-label">Documents</div>
-                <a href="{{ route('gestion.documents.index') }}" class="sidebar-link {{ request()->routeIs('gestion.documents.*') && ! request()->boolean('corbeille') ? 'active' : '' }}" title="Tous les documents">
+                {{--
+                    `documents.voir`/`documents.telecharger` (voir routes/web.php)
+                    vivent HORS du préfixe "gestion." (accessibles depuis
+                    n'importe quel module) — sans ce `orWhere`, ouvrir l'aperçu
+                    d'un fichier ne laissait plus AUCUNE entrée active dans ce
+                    menu, perte de repère signalée par le client ("on ne sait
+                    plus sur quel menu on se trouve"). "Tous les documents" sert
+                    de repère par défaut faute de pouvoir remonter jusqu'au
+                    module d'origine depuis cette page partagée.
+                --}}
+                <a href="{{ route('gestion.documents.index') }}" class="sidebar-link {{ (request()->routeIs('gestion.documents.*') && ! request()->boolean('corbeille')) || request()->routeIs('documents.voir') ? 'active' : '' }}" title="Tous les documents">
                     <i class="bi bi-file-earmark-text-fill"></i><span class="sidebar-label">Tous les documents</span>
                 </a>
             @endif
@@ -166,6 +204,67 @@
                 <a href="{{ route('gestion.reunions.index') }}" class="sidebar-link {{ request()->routeIs('gestion.reunions.*') ? 'active' : '' }}" title="PV de réunion">
                     <i class="bi bi-people-fill"></i><span class="sidebar-label">PV de réunion</span>
                 </a>
+            @endif
+
+            @if (\App\Support\ResourceAccess::can('etudiants', 'view'))
+                <a href="{{ route('gestion.etudiants.index') }}" class="sidebar-link {{ request()->routeIs('gestion.etudiants.*') ? 'active' : '' }}" title="Dossier étudiant">
+                    <i class="bi bi-person-vcard-fill"></i><span class="sidebar-label">Dossier étudiant</span>
+                </a>
+            @endif
+
+            {{-- Gestion des contrats — demande explicite du client
+                 ("intègre à présent la gestion des contrat"), voir le
+                 docblock de App\Http\Controllers\ContratController. Lien
+                 direct vers la première catégorie active, même raison que
+                 "Gestion des dépenses"/"Gestion des recettes" plus bas
+                 (évite un aller-retour HTTP inutile) — masqué si aucune
+                 catégorie active n'existe encore. --}}
+            @if ($premiereCategorieContrat)
+                <a href="{{ route('gestion.contrats.index', ['typeContrat' => $premiereCategorieContrat->code]) }}" class="sidebar-link {{ request()->routeIs('gestion.contrats.*') ? 'active' : '' }}" title="Gestion des contrats">
+                    <i class="bi bi-vector-pen"></i><span class="sidebar-label">Gestion des contrats</span>
+                </a>
+            @endif
+
+            {{-- Finances — États financiers (demande explicite du client,
+                 "intègre la gestion des États financières"), Gestion des
+                 Recettes ("intègre la Gestion des Recette"), Gestion des
+                 Dépenses ("intègre la GESTION des DEPENSES") et Liste des
+                 étudiants (finances) ("intègre également la GESTION de la
+                 listes des etudiant... dans la partie Finance"), voir
+                 App\Http\Controllers\EtatFinancierController/
+                 RecetteScolariteController/RecetteDossierController/
+                 DepenseController/ListeFinanceEtudiantController. Les liens
+                 "Gestion des recettes"/"Gestion des dépenses" mènent
+                 directement au premier onglet plutôt qu'à leur route
+                 d'accueil respective (simple redirection) — évite un
+                 aller-retour HTTP inutile pour le visiteur qui clique depuis
+                 la sidebar. --}}
+            @if (\App\Support\ResourceAccess::can('etats_financiers', 'view') || \App\Support\ResourceAccess::can('recettes', 'view') || $premiereCategorieDepense || \App\Support\ResourceAccess::can('listes_finances_etudiants', 'view'))
+                <div class="sidebar-group-label">Finances</div>
+
+                @if (\App\Support\ResourceAccess::can('etats_financiers', 'view'))
+                    <a href="{{ route('gestion.etats-financiers.index') }}" class="sidebar-link {{ request()->routeIs('gestion.etats-financiers.*') ? 'active' : '' }}" title="États financiers">
+                        <i class="bi bi-bar-chart-line-fill"></i><span class="sidebar-label">États financiers</span>
+                    </a>
+                @endif
+
+                @if (\App\Support\ResourceAccess::can('recettes', 'view'))
+                    <a href="{{ route('gestion.recettes.scolarite.index') }}" class="sidebar-link {{ request()->routeIs('gestion.recettes.*') ? 'active' : '' }}" title="Gestion des recettes">
+                        <i class="bi bi-cash-coin"></i><span class="sidebar-label">Gestion des recettes</span>
+                    </a>
+                @endif
+
+                @if ($premiereCategorieDepense)
+                    <a href="{{ route('gestion.depenses.index', ['typeDepense' => $premiereCategorieDepense->code]) }}" class="sidebar-link {{ request()->routeIs('gestion.depenses.*') ? 'active' : '' }}" title="Gestion des dépenses">
+                        <i class="bi bi-credit-card-2-front-fill"></i><span class="sidebar-label">Gestion des dépenses</span>
+                    </a>
+                @endif
+
+                @if (\App\Support\ResourceAccess::can('listes_finances_etudiants', 'view'))
+                    <a href="{{ route('gestion.listes-finances-etudiants.index') }}" class="sidebar-link {{ request()->routeIs('gestion.listes-finances-etudiants.*') ? 'active' : '' }}" title="Liste des étudiants (finances)">
+                        <i class="bi bi-people-fill"></i><span class="sidebar-label">Liste des étudiants (finances)</span>
+                    </a>
+                @endif
             @endif
 
             @foreach ($menuTypesDocuments as $groupe)
@@ -229,9 +328,38 @@
                     <a href="{{ route('gestion.sauvegardes.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sauvegardes.*') ? 'active' : '' }}" title="Sauvegardes">
                         <i class="bi bi-cloud-arrow-up-fill"></i><span class="sidebar-label">Sauvegardes</span>
                     </a>
-                    <a href="{{ route('gestion.parametres.index') }}" class="sidebar-link {{ request()->routeIs('gestion.parametres.*') ? 'active' : '' }}" title="Paramètres">
-                        <i class="bi bi-gear-fill"></i><span class="sidebar-label">Paramètres</span>
+                    <a href="{{ route('gestion.annonces.create') }}" class="sidebar-link {{ request()->routeIs('gestion.annonces.*') ? 'active' : '' }}" title="Annonces">
+                        <i class="bi bi-megaphone-fill"></i><span class="sidebar-label">Annonces</span>
                     </a>
+
+                    {{--
+                        Sous-menu "Paramètres" — demande explicite du client
+                        ("créer des sous-menu directement sur le menu")
+                        plutôt que de passer par la page Paramètres pour
+                        choisir une section : même principe de collapse que
+                        $menuTypesDocuments ci-dessus (sidebar-link-toggle +
+                        sidebar-sublink), une entrée par section de
+                        App\Http\Controllers\ParametresController::SECTIONS.
+                    --}}
+                    @php
+                        $sectionParametresActive = request()->routeIs('gestion.parametres.*');
+                        $sectionParametresActuelle = request()->route('section') ?? array_key_first(\App\Http\Controllers\ParametresController::SECTIONS);
+                    @endphp
+                    <a href="#sidebarMenuParametres" class="sidebar-link sidebar-link-toggle {{ $sectionParametresActive ? 'active' : '' }}"
+                       data-bs-toggle="collapse" role="button"
+                       aria-expanded="{{ $sectionParametresActive ? 'true' : 'false' }}" aria-controls="sidebarMenuParametres"
+                       title="Paramètres">
+                        <i class="bi bi-gear-fill"></i>
+                        <span class="sidebar-label">Paramètres</span>
+                        <i class="bi bi-chevron-down sidebar-chevron"></i>
+                    </a>
+                    <div class="collapse {{ $sectionParametresActive ? 'show' : '' }}" id="sidebarMenuParametres">
+                        @foreach (\App\Http\Controllers\ParametresController::SECTIONS as $cle => $libelle)
+                            <a href="{{ route('gestion.parametres.index', ['section' => $cle]) }}" class="sidebar-link sidebar-sublink {{ $sectionParametresActive && $sectionParametresActuelle === $cle ? 'active' : '' }}" title="{{ $libelle }}">
+                                <span class="sidebar-label">{{ $libelle }}</span>
+                            </a>
+                        @endforeach
+                    </div>
                 @endif
             @endif
         </nav>
@@ -266,6 +394,47 @@
                 <button type="button" id="themeToggle" class="topbar-icon-btn" title="Changer de thème">
                     <i class="bi bi-moon-stars-fill" id="themeIcon"></i>
                 </button>
+
+                <div class="dropdown">
+                    <button type="button" class="topbar-icon-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" title="Notifications">
+                        <i class="bi bi-bell-fill"></i>
+                        @if ($nombreNotificationsNonLues > 0)
+                            <span class="notif-dot">{{ $nombreNotificationsNonLues > 9 ? '9+' : $nombreNotificationsNonLues }}</span>
+                        @endif
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end shadow-sm p-0" style="width: 340px; max-width: 90vw;">
+                        <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+                            <span class="fw-semibold small">Notifications</span>
+                            @if ($nombreNotificationsNonLues > 0)
+                                <form method="POST" action="{{ route('gestion.notifications.tout-marquer-comme-lu') }}">
+                                    @csrf
+                                    <button type="submit" class="btn btn-link btn-sm p-0 small">Tout marquer comme lu</button>
+                                </form>
+                            @endif
+                        </div>
+                        <div style="max-height: 360px; overflow-y: auto;">
+                            @forelse ($notificationsRecentes as $notification)
+                                <form method="POST" action="{{ route('gestion.notifications.marquer-comme-lue', $notification->id) }}"
+                                      class="border-bottom {{ $notification->read_at ? '' : 'bg-primary-subtle bg-opacity-25' }}">
+                                    @csrf
+                                    <button type="submit" class="btn w-100 text-start px-3 py-2 rounded-0 d-flex gap-2 align-items-start">
+                                        <i class="bi {{ $notification->data['icone'] ?? 'bi-bell-fill' }} mt-1"></i>
+                                        <span class="flex-grow-1">
+                                            <span class="d-block small fw-semibold">{{ $notification->data['titre'] ?? 'Notification' }}</span>
+                                            <span class="d-block small text-muted text-wrap">{{ \Illuminate\Support\Str::limit($notification->data['message'] ?? '', 80) }}</span>
+                                            <span class="d-block text-muted" style="font-size: .72rem;">{{ $notification->created_at->diffForHumans() }}</span>
+                                        </span>
+                                    </button>
+                                </form>
+                            @empty
+                                <div class="text-center text-muted small py-4">
+                                    <i class="bi bi-bell"></i><br>Aucune notification pour le moment.
+                                </div>
+                            @endforelse
+                        </div>
+                        <a href="{{ route('gestion.notifications.index') }}" class="dropdown-item text-center small border-top py-2">Voir toutes mes notifications</a>
+                    </div>
+                </div>
 
                 <div class="dropdown">
                     <button type="button" class="btn btn-sm d-flex align-items-center gap-2 border" data-bs-toggle="dropdown">
@@ -316,6 +485,45 @@
         <footer class="text-center text-muted small py-3">
             &copy; {{ date('Y') }} {{ $parametresGlobaux->nom_application }}.
         </footer>
+    </div>
+</div>
+
+{{--
+    Fenêtre modale PARTAGÉE pour "Voir l'historique" — une seule instance
+    pour toute l'application, réutilisée par CHAQUE bouton
+    resources/views/gestion/partials/_lien_historique.blade.php (document,
+    dépense, dossier de recette, PV...) plutôt qu'une modale par ligne —
+    demande explicite du client ("rester sur la même page pour voir
+    l'historique du fichier") : avant cette modale, ce raccourci naviguait
+    vers l'écran Historique complet, perdant le contexte de la page
+    d'origine. Le contenu (juste le tableau, voir
+    gestion.historique._tableau) est chargé en arrière-plan au moment de
+    l'ouverture (voir le script plus bas), à partir de l'URL indiquée par le
+    bouton qui a déclenché l'ouverture (`data-historique-url`).
+--}}
+<div class="modal fade" id="modalHistorique" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-clock-history"></i> Historique
+                    <span class="text-muted fs-6" id="modalHistoriqueSousTitre"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <div class="modal-body" id="modalHistoriqueCorps">
+                <div class="d-flex align-items-center gap-2 text-muted py-4 justify-content-center">
+                    <div class="spinner-border spinner-border-sm" role="status"></div>
+                    Chargement…
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" id="modalHistoriqueLienComplet" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-list-ul"></i> Voir tout l'historique
+                </a>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -401,6 +609,72 @@
             lienActif.scrollIntoView({ block: 'center' });
         }
     })();
+
+    // Fenêtre modale partagée "Voir l'historique" (voir l'élément #modalHistorique
+    // plus haut et resources/views/gestion/partials/_lien_historique.blade.php) :
+    // charge le fragment (juste le tableau, `fragment=1`) par fetch à chaque
+    // ouverture, à partir du bouton qui l'a déclenchée (`event.relatedTarget`,
+    // fourni nativement par l'évènement "show.bs.modal" de Bootstrap).
+    (function () {
+        const modale = document.getElementById('modalHistorique');
+        if (!modale) return;
+
+        const corps = document.getElementById('modalHistoriqueCorps');
+        const sousTitre = document.getElementById('modalHistoriqueSousTitre');
+        const lienComplet = document.getElementById('modalHistoriqueLienComplet');
+        const contenuChargement = corps.innerHTML;
+
+        modale.addEventListener('show.bs.modal', function (evenement) {
+            const bouton = evenement.relatedTarget;
+            if (!bouton) return;
+
+            const url = bouton.getAttribute('data-historique-url');
+            sousTitre.textContent = bouton.getAttribute('data-historique-titre') ? '— ' + bouton.getAttribute('data-historique-titre') : '';
+            lienComplet.href = bouton.getAttribute('data-historique-url-complet') || '#';
+            corps.innerHTML = contenuChargement;
+
+            if (!url) return;
+
+            fetch(url, { credentials: 'same-origin' })
+                .then(function (reponse) {
+                    if (!reponse.ok) throw new Error('Échec du chargement (' + reponse.status + ')');
+                    return reponse.text();
+                })
+                .then(function (html) {
+                    corps.innerHTML = html;
+                })
+                .catch(function (erreur) {
+                    console.error(erreur);
+                    corps.innerHTML = '<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-triangle"></i> Impossible de charger l\'historique.</div>';
+                });
+        });
+    })();
+
+    // Bouton "afficher/masquer" sur les champs mot de passe (voir
+    // resources/views/components/champ-mot-de-passe.blade.php) — demande
+    // explicite du client, pour tous les mots de passe de la plateforme
+    // (connexion, création/modification d'un compte, "Mon profil",
+    // configuration mail SMTP...). Délégué sur `document` plutôt qu'un
+    // addEventListener par bouton : fonctionne pour tous les champs,
+    // présents dès le chargement de la page comme ajoutés dynamiquement
+    // ensuite, sans rien à répéter sur chaque écran.
+    document.addEventListener('click', function (evenement) {
+        const bouton = evenement.target.closest('.toggle-mot-de-passe');
+        if (!bouton) return;
+
+        const champ = bouton.closest('.input-group')?.querySelector('input');
+        if (!champ) return;
+
+        const futureVisible = champ.type === 'password';
+        champ.type = futureVisible ? 'text' : 'password';
+
+        const icone = bouton.querySelector('i');
+        if (icone) {
+            icone.classList.toggle('bi-eye', !futureVisible);
+            icone.classList.toggle('bi-eye-slash', futureVisible);
+        }
+        bouton.setAttribute('aria-label', futureVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    });
 </script>
 @yield('scripts')
 </body>

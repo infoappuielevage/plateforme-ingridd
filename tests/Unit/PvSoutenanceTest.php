@@ -40,13 +40,23 @@ class PvSoutenanceTest extends TestCase
         );
     }
 
-    /** Les 4 niveaux sont ceux du registre papier fourni par le client (BTS, Licence, Master, Doctorat). */
+    /** Les 5 niveaux : ceux du registre papier fourni par le client (BTS, Licence, Master, Doctorat), plus DTS ajouté après coup à côté du BTS (cycles courts équivalents). */
     public function test_les_niveaux_sont_ceux_du_registre(): void
     {
         $this->assertSame(
-            ['bts', 'licence', 'master', 'doctorat'],
+            ['bts', 'dts', 'licence', 'master', 'doctorat'],
             array_keys(PvSoutenance::NIVEAUX)
         );
+    }
+
+    /** niveauBadgeClasse() donne un repère visuel par niveau (voir public/css/style.css) — demande explicite du client. */
+    public function test_niveau_badge_classe_une_classe_par_niveau_connu(): void
+    {
+        $this->assertSame('bg-niveau-bts', (new PvSoutenance(['niveau' => PvSoutenance::NIVEAU_BTS]))->niveauBadgeClasse());
+        $this->assertSame('bg-niveau-dts', (new PvSoutenance(['niveau' => PvSoutenance::NIVEAU_DTS]))->niveauBadgeClasse());
+        $this->assertSame('bg-niveau-doctorat', (new PvSoutenance(['niveau' => PvSoutenance::NIVEAU_DOCTORAT]))->niveauBadgeClasse());
+        // Valeur inconnue (donnée corrompue/ancienne) : repli neutre, jamais d'erreur.
+        $this->assertSame('text-bg-secondary', (new PvSoutenance(['niveau' => 'inconnu']))->niveauBadgeClasse());
     }
 
     /** estDiplomeRetire() se base sur diplome_date_retrait (renseignée <=> retiré), pas un booléen dédié. */

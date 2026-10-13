@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ListeTriable;
+use App\Http\Controllers\Concerns\VerifieVerrouillage;
 use App\Models\AnneeAcademique;
 use App\Models\Document;
 use App\Models\Filiere;
@@ -9,19 +11,24 @@ use App\Models\Niveau;
 use App\Models\Parametre;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
+use App\Models\User;
 use App\Support\FamillesDocument;
+use App\Support\FichiersExcel;
 use App\Support\ResourceAccess;
 use App\Support\Semestres;
 use App\Support\TypesDiplome;
 use App\Support\TypesEcranDedie;
 use App\Support\TypesFichiers;
 use App\Support\TypesPvSoutenance;
+use App\Support\Verrouillage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Liste/création/modification/suppression des documents — remplace
@@ -40,6 +47,8 @@ use Illuminate\Validation\Rule;
  */
 class DocumentController extends Controller
 {
+    use ListeTriable, VerifieVerrouillage;
+
     public function __construct()
     {
         // Vérifié sur CHAQUE action (pas seulement l'affichage) : create/
@@ -56,8 +65,79 @@ class DocumentController extends Controller
         // inconnu dans l'URL retombe silencieusement sur "tous".
         $onglet = FamillesDocument::ongletValide($request->string('onglet', 'tous')->toString());
 
-        $requete = Document::query()
+        $documents = $this->requeteListe($request, $onglet, $corbeille)->paginate(8)->withQueryString();
+
+        // [clé, direction] résolus SANS requête (voir ListeTriable) pour que
+        // la vue marque la colonne active dans l'en-tête — même principe que
+        // PvSoutenanceController::index().
+        [$triActuel, $directionActuelle] = $this->resoudreTri($request, $this->colonnesTriables(), 'created_at', 'desc');
+
+        return view('gestion.documents.index', [
+            'documents' => $documents,
+            'corbeille' => $corbeille,
+            // Ignore les filtres actifs (onglet, recherche...) — "Vider la
+            // corbeille" agit toujours sur TOUS les documents corbeillés,
+            // jamais seulement ceux affichés à l'écran (voir viderCorbeille()).
+            'corbeillePeutEtreVidee' => $corbeille && Document::onlyTrashed()->exists(),
+            'onglet' => $onglet,
+            'onglets' => FamillesDocument::onglets(),
+            'types' => TypeDocument::query()->orderBy('ordre')->get(),
+            'filieres' => Filiere::query()->orderBy('ordre')->get(),
+            'niveaux' => Niveau::query()->orderBy('ordre')->get(),
+            'anneesAcademiques' => AnneeAcademique::query()->orderByDesc('libelle')->get(),
+            'typeDiplomeAttestationIds' => TypesDiplome::ids(),
+            'triActuel' => $triActuel,
+            'directionActuelle' => $directionActuelle,
+        ]);
+    }
+
+    /**
+     * Export Excel (.xlsx) de la liste — demandé par le client, respecte
+     * EXACTEMENT les mêmes filtres que l'écran (voir requeteListe()
+     * ci-dessous, partagée avec index()), simplement sans pagination.
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $corbeille = $request->boolean('corbeille');
+        $onglet = FamillesDocument::ongletValide($request->string('onglet', 'tous')->toString());
+
+        $documents = $this->requeteListe($request, $onglet, $corbeille)->get();
+
+        $lignes = $documents->map(fn (Document $document) => [
+            $document->description,
+            $document->typeDocument?->libelle,
+            $document->sousTypeDocument?->libelle,
+            $document->filiere?->libelle,
+            $document->niveau?->libelle,
+            $document->anneeAcademique?->libelle,
+            $document->statut_retrait,
+            $document->uploadePar?->name,
+            $document->nom_original,
+            $document->created_at?->format('d/m/Y H:i'),
+        ]);
+
+        return FichiersExcel::exporter(
+            'documents-'.now()->format('Y-m-d').'.xlsx',
+            ['Description', 'Type', 'Sous-type', 'Filière', 'Niveau', 'Année académique', 'Statut retrait', 'Déposé par', 'Fichier original', 'Date de dépôt'],
+            $lignes
+        );
+    }
+
+    /** @return \Illuminate\Database\Eloquent\Builder<Document> */
+    protected function requeteListe(Request $request, string $onglet, bool $corbeille): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = Document::query()
             ->with(['typeDocument', 'sousTypeDocument', 'filiere', 'niveau', 'anneeAcademique', 'uploadePar'])
+            // Jamais les pièces d'un écran dédié ici (voir App\Support\
+            // TypesEcranDedie) : au-delà du doublon ("comme à la création",
+            // voir donneesFormulaire() ci-dessous), les laisser dans "Tous
+            // les documents" permettait à un rôle n'ayant QUE le droit
+            // générique "documents" (ex. "Gestionnaire", voir
+            // database/seeders/RoleSeeder.php) de voir et télécharger des
+            // pièces d'étudiant/de soutenance sans avoir le droit du module
+            // correspondant — faille corrigée sur demande explicite du
+            // client (voir aussi les routes documents.telecharger/voir).
+            ->whereNotIn('type_document_id', TypesEcranDedie::ids())
             ->when($corbeille, fn ($q) => $q->onlyTrashed())
             ->when(FamillesDocument::codesPour($onglet), function ($q, array $codes) {
                 $q->whereHas('typeDocument', fn ($q2) => $q2->whereIn('code', $codes));
@@ -77,26 +157,38 @@ class DocumentController extends Controller
                         ->orWhere('numero_diplome', 'like', $terme)
                         ->orWhere('theme_memoire', 'like', $terme);
                 });
-            })
-            ->latest('created_at');
+            });
 
-        $documents = $requete->paginate(20)->withQueryString();
+        $this->appliquerTri($query, $this->colonnesTriables(), $this->resoudreTri($request, $this->colonnesTriables(), 'created_at', 'desc'));
 
-        return view('gestion.documents.index', [
-            'documents' => $documents,
-            'corbeille' => $corbeille,
-            // Ignore les filtres actifs (onglet, recherche...) — "Vider la
-            // corbeille" agit toujours sur TOUS les documents corbeillés,
-            // jamais seulement ceux affichés à l'écran (voir viderCorbeille()).
-            'corbeillePeutEtreVidee' => $corbeille && Document::onlyTrashed()->exists(),
-            'onglet' => $onglet,
-            'onglets' => FamillesDocument::onglets(),
-            'types' => TypeDocument::query()->orderBy('ordre')->get(),
-            'filieres' => Filiere::query()->orderBy('ordre')->get(),
-            'niveaux' => Niveau::query()->orderBy('ordre')->get(),
-            'anneesAcademiques' => AnneeAcademique::query()->orderByDesc('libelle')->get(),
-            'typeDiplomeAttestationIds' => TypesDiplome::ids(),
-        ]);
+        return $query;
+    }
+
+    /**
+     * Colonnes triables de la liste (voir App\Http\Controllers\Concerns\ListeTriable)
+     * — "Type" et "Filière / Niveau / Année" ne sont PAS incluses : ce sont
+     * des cellules composites qui mélangent plusieurs valeurs (type + sous-
+     * type + description, ou filière + niveau/semestre + année), sans valeur
+     * unique claire sur laquelle trier. "Ajouté par" est une relation, donc
+     * une sous-requête corrélée plutôt qu'un orderBy direct — même principe
+     * que PvSoutenanceController::colonnesTriables() pour "Filière".
+     * "created_at" reste le tri par défaut (identique à l'ancien
+     * ->latest('created_at')) même si aucune colonne "Date de dépôt" dédiée
+     * n'existe (elle est affichée à l'intérieur de la cellule "Fichier").
+     *
+     * @return array<string, string|\Closure>
+     */
+    protected function colonnesTriables(): array
+    {
+        return [
+            'created_at' => 'created_at',
+            'nom_original' => 'nom_original',
+            'ajoute_par' => fn ($query, string $direction) => $query->orderBy(
+                User::select('name')->whereColumn('users.id', 'documents.uploaded_by'),
+                $direction
+            ),
+            'statut_retrait' => 'statut_retrait',
+        ];
     }
 
     public function create(Request $request): View
@@ -144,6 +236,7 @@ class DocumentController extends Controller
     public function edit(Document $document): View
     {
         abort_unless(ResourceAccess::can('documents', 'edit'), 403);
+        $this->abortSiEcranDedie($document);
 
         return view('gestion.documents.form', $this->donneesFormulaire($document));
     }
@@ -151,6 +244,18 @@ class DocumentController extends Controller
     public function update(Request $request, Document $document): RedirectResponse
     {
         abort_unless(ResourceAccess::can('documents', 'edit'), 403);
+        $this->abortSiEcranDedie($document);
+
+        // Uniquement si un NOUVEAU fichier est envoyé (remplacement) — voir
+        // App\Support\Verrouillage, dont la portée est volontairement
+        // limitée au fichier lui-même : modifier les autres champs
+        // (description, type...) d'un document verrouillé reste permis.
+        if ($request->hasFile('fichier')) {
+            $reponse = $this->refuserSiVerrouille($document);
+            if ($reponse) {
+                return $reponse;
+            }
+        }
 
         $donnees = $this->valider($request, creation: false);
 
@@ -203,6 +308,12 @@ class DocumentController extends Controller
     public function destroy(Document $document): RedirectResponse
     {
         abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+        $this->abortSiEcranDedie($document);
+
+        $reponse = $this->refuserSiVerrouille($document);
+        if ($reponse) {
+            return $reponse;
+        }
 
         $document->delete();
 
@@ -229,7 +340,7 @@ class DocumentController extends Controller
     {
         abort_unless(ResourceAccess::can('documents', 'delete'), 403);
 
-        $documents = Document::onlyTrashed()->get();
+        [$documents, $ignores] = $this->separerVerrouilles(Document::onlyTrashed()->get());
 
         foreach ($documents as $document) {
             $document->forceDelete();
@@ -237,7 +348,7 @@ class DocumentController extends Controller
 
         return redirect()
             ->route('gestion.documents.index', ['corbeille' => 1])
-            ->with('succes', $documents->count().' document(s) supprimé(s) définitivement.');
+            ->with('succes', $this->messageAvecIgnores($documents->count().' document(s) supprimé(s) définitivement.', $ignores));
     }
 
     /**
@@ -266,20 +377,28 @@ class DocumentController extends Controller
             'documents.*' => ['integer'],
         ]);
 
-        $documents = Document::query()->whereIn('id', $donnees['documents'])->get();
+        [$documents, $ignores] = $this->separerVerrouilles(
+            Document::query()
+                ->whereIn('id', $donnees['documents'])
+                ->whereNotIn('type_document_id', TypesEcranDedie::ids())
+                ->get()
+        );
 
         foreach ($documents as $document) {
             $document->delete();
         }
 
-        return back()->with('succes', $documents->count().' document(s) mis à la corbeille.');
+        return back()->with('succes', $this->messageAvecIgnores($documents->count().' document(s) mis à la corbeille.', $ignores));
     }
 
     public function restore(int $document): RedirectResponse
     {
         abort_unless(ResourceAccess::can('documents', 'delete'), 403);
 
-        Document::onlyTrashed()->findOrFail($document)->restore();
+        $document = Document::onlyTrashed()->findOrFail($document);
+        $this->abortSiEcranDedie($document);
+
+        $document->restore();
 
         return back()->with('succes', 'Document restauré.');
     }
@@ -294,7 +413,10 @@ class DocumentController extends Controller
             'documents.*' => ['integer'],
         ]);
 
-        $documents = Document::onlyTrashed()->whereIn('id', $donnees['documents'])->get();
+        $documents = Document::onlyTrashed()
+            ->whereIn('id', $donnees['documents'])
+            ->whereNotIn('type_document_id', TypesEcranDedie::ids())
+            ->get();
 
         foreach ($documents as $document) {
             $document->restore();
@@ -307,7 +429,15 @@ class DocumentController extends Controller
     {
         abort_unless(ResourceAccess::can('documents', 'delete'), 403);
 
-        Document::onlyTrashed()->findOrFail($document)->forceDelete();
+        $document = Document::onlyTrashed()->findOrFail($document);
+        $this->abortSiEcranDedie($document);
+
+        $reponse = $this->refuserSiVerrouille($document);
+        if ($reponse) {
+            return $reponse;
+        }
+
+        $document->forceDelete();
 
         return back()->with('succes', 'Document supprimé définitivement.');
     }
@@ -326,13 +456,18 @@ class DocumentController extends Controller
             'documents.*' => ['integer'],
         ]);
 
-        $documents = Document::onlyTrashed()->whereIn('id', $donnees['documents'])->get();
+        [$documents, $ignores] = $this->separerVerrouilles(
+            Document::onlyTrashed()
+                ->whereIn('id', $donnees['documents'])
+                ->whereNotIn('type_document_id', TypesEcranDedie::ids())
+                ->get()
+        );
 
         foreach ($documents as $document) {
             $document->forceDelete();
         }
 
-        return back()->with('succes', $documents->count().' document(s) supprimé(s) définitivement.');
+        return back()->with('succes', $this->messageAvecIgnores($documents->count().' document(s) supprimé(s) définitivement.', $ignores));
     }
 
     /**
@@ -343,6 +478,7 @@ class DocumentController extends Controller
     public function basculerRetrait(Document $document): RedirectResponse
     {
         abort_unless(ResourceAccess::can('documents', 'edit'), 403);
+        $this->abortSiEcranDedie($document);
 
         if ($document->estRetire()) {
             $document->update([
@@ -359,6 +495,113 @@ class DocumentController extends Controller
         }
 
         return back()->with('succes', 'Statut de retrait mis à jour.');
+    }
+
+    /**
+     * Verrouille MANUELLEMENT un document, à la demande — en plus des deux
+     * seuils automatiques (année académique / date, réglés dans
+     * Administration > Paramètres), demande explicite du client : pouvoir
+     * figer un document précis même s'il ne tombe sous aucun des deux
+     * seuils. Gérée par le droit ResourceAccess "verrouillage_documents" >
+     * "Modifier" plutôt que réservée en dur au rôle admin (demande explicite
+     * du client, "intégrer le verrouillage dans les rôles et permissions") —
+     * un rôle "admin" a de toute façon toujours ce droit (voir
+     * ResourceAccess::can()), coché ou non dans la matrice.
+     *
+     * Efface toujours `deverrouille_le`/`deverrouille_par_id` : les deux
+     * paires de colonnes sont mutuellement exclusives, voir le docblock de
+     * App\Support\Verrouillage.
+     */
+    public function verrouiller(Document $document): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('verrouillage_documents', 'edit'), 403);
+
+        $document->update([
+            'verrouille_le' => now(),
+            'verrouille_par_id' => Auth::id(),
+            'deverrouille_le' => null,
+            'deverrouille_par_id' => null,
+        ]);
+
+        return back()->with('succes', 'Document verrouillé — il ne peut plus être remplacé ni supprimé sans déverrouillage.');
+    }
+
+    /**
+     * Déverrouille EXPLICITEMENT un document verrouillé (voir
+     * App\Support\Verrouillage) — demande explicite du client : même un
+     * administrateur ne doit pas pouvoir contourner le verrouillage
+     * silencieusement, cette action doit rester une décision volontaire et
+     * tracée. Gérée par le même droit ResourceAccess que verrouiller()
+     * ci-dessus — voir son docblock pour le changement par rapport à la
+     * version précédente (réservée en dur au rôle admin).
+     *
+     * Pas de condition "déjà déverrouillé" ici : renvoyer un succès silencieux
+     * sur un document déjà déverrouillé est inoffensif (déverrouille_par_id/
+     * deverrouille_le seraient simplement réécrits avec l'utilisateur et
+     * l'horodatage actuels), inutile d'ajouter une branche d'erreur dédiée.
+     *
+     * Efface toujours `verrouille_le`/`verrouille_par_id` — même raison que
+     * verrouiller() ci-dessus.
+     */
+    public function deverrouiller(Document $document): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('verrouillage_documents', 'edit'), 403);
+
+        $document->update([
+            'deverrouille_le' => now(),
+            'deverrouille_par_id' => Auth::id(),
+            'verrouille_le' => null,
+            'verrouille_par_id' => null,
+        ]);
+
+        return back()->with('succes', 'Document déverrouillé — il peut désormais être remplacé ou supprimé.');
+    }
+
+    /**
+     * Bloque toute manipulation d'un document "à écran dédié" (voir
+     * App\Support\TypesEcranDedie) depuis ce formulaire général — PAS une
+     * question de droit ici (même un administrateur est concerné, voir
+     * App\Support\ResourceAccess::can() qui donne toujours "true" à
+     * "admin" : ce garde-fou agit AVANT/EN PLUS de ResourceAccess) : ces
+     * documents ont leur propre contrôleur (EtudiantController,
+     * PvSoutenanceController...), seul à connaître les règles qui vont avec
+     * (ex. une case qui ne doit JAMAIS disparaître même quand on retire son
+     * fichier, voir EtudiantController::supprimerFichier()) — les modifier/
+     * supprimer ici court-circuiterait ces règles et laisserait une case
+     * avec un `document_id` pointant vers un document supprimé.
+     *
+     * 404 plutôt que 403 : ne pas laisser deviner qu'un document "caché" de
+     * la liste générale (voir index() ci-dessus) existe bien à cet id.
+     */
+    protected function abortSiEcranDedie(Document $document): void
+    {
+        abort_if(in_array($document->type_document_id, TypesEcranDedie::ids(), true), 404);
+    }
+
+    /**
+     * Sépare une sélection de documents entre ceux réellement supprimables
+     * et ceux encore verrouillés (voir App\Support\Verrouillage) — utilisée
+     * par viderCorbeille()/mettreCorbeilleGroupee()/forceDestroyGroupe() pour
+     * qu'UN SEUL document verrouillé glissé dans la sélection n'empêche pas
+     * de traiter les autres : il est simplement ignoré, et le nombre ignoré
+     * est indiqué dans le message de confirmation (voir messageAvecIgnores()
+     * ci-dessous).
+     *
+     * @param  \Illuminate\Support\Collection<int, Document>  $documents
+     * @return array{0: \Illuminate\Support\Collection<int, Document>, 1: int}
+     */
+    protected function separerVerrouilles(Collection $documents): array
+    {
+        $autorises = $documents->reject(fn (Document $document) => Verrouillage::estVerrouille($document));
+
+        return [$autorises, $documents->count() - $autorises->count()];
+    }
+
+    protected function messageAvecIgnores(string $message, int $ignores): string
+    {
+        return $ignores > 0
+            ? $message." ({$ignores} document(s) verrouillé(s) ignoré(s), non supprimé(s).)"
+            : $message;
     }
 
     protected function donneesFormulaire(Document $document, ?int $typePreselectionneId = null): array

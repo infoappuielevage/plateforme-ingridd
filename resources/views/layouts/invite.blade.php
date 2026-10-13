@@ -74,6 +74,28 @@
             actualiserIcone();
         });
     })();
+
+    // Bouton "afficher/masquer" sur les champs mot de passe (voir
+    // resources/views/components/champ-mot-de-passe.blade.php et le même
+    // script dans layouts/gestion.blade.php, pour les écrans après
+    // connexion) — demande explicite du client.
+    document.addEventListener('click', function (evenement) {
+        const bouton = evenement.target.closest('.toggle-mot-de-passe');
+        if (!bouton) return;
+
+        const champ = bouton.closest('.input-group')?.querySelector('input');
+        if (!champ) return;
+
+        const futureVisible = champ.type === 'password';
+        champ.type = futureVisible ? 'text' : 'password';
+
+        const icone = bouton.querySelector('i');
+        if (icone) {
+            icone.classList.toggle('bi-eye', !futureVisible);
+            icone.classList.toggle('bi-eye-slash', futureVisible);
+        }
+        bouton.setAttribute('aria-label', futureVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    });
 </script>
 </body>
 </html>

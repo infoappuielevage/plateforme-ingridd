@@ -6,7 +6,9 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">{{ $reunion->typeLibelle() }} — {{ $reunion->date_reunion?->format('d/m/Y') }}</h1>
-        <p class="text-muted small mb-0">{{ $reunion->anneeAcademique->libelle }}</p>
+        <p class="text-muted small mb-0">
+            <span class="badge bg-palette-{{ $reunion->anneeAcademique->paletteIndex() }}">{{ $reunion->anneeAcademique->libelle }}</span>
+        </p>
     </div>
     <div class="d-flex gap-2">
         @if (\App\Support\ResourceAccess::can('reunions', 'edit'))
@@ -29,7 +31,7 @@
 @endif
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-card-text"></i> Description</div>
+    <div class="card-header header-primary d-flex align-items-center gap-2"><i class="bi bi-card-text"></i> Description</div>
     <div class="card-body">
         <p class="mb-0">{{ $reunion->description ?: '—' }}</p>
     </div>
@@ -41,26 +43,35 @@
 @endphp
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-file-earmark-text"></i> Rapport de la réunion</div>
+    <div class="card-header header-info d-flex align-items-center gap-2"><i class="bi bi-file-earmark-text"></i> Rapport de la réunion</div>
     <div class="card-body">
         @include('gestion.reunions._rapport', ['rapport' => $rapport, 'reunion' => $reunion, 'peutModifier' => $peutModifier, 'peutSupprimer' => $peutSupprimer, 'tailleMaxMo' => $tailleMaxMo])
     </div>
 </div>
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-paperclip"></i> Pièces jointes</div>
+    <div class="card-header header-accent d-flex align-items-center gap-2"><i class="bi bi-paperclip"></i> Pièces jointes</div>
     <div class="table-responsive">
         <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Fichier</th>
+                    <th style="width: 220px;">Verrouillage</th>
+                </tr>
+            </thead>
             <tbody>
                 @forelse ($piecesJointes as $fichier)
                     <tr>
                         <td>
                             @include('gestion.reunions._piece-jointe', ['fichier' => $fichier, 'reunion' => $reunion, 'peutSupprimer' => $peutSupprimer])
                         </td>
+                        <td>
+                            @include('gestion.partials._verrou_document', ['document' => $fichier->document])
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td class="text-muted small py-3">Aucune pièce jointe pour l'instant.</td>
+                        <td colspan="2" class="text-muted small py-3">Aucune pièce jointe pour l'instant.</td>
                     </tr>
                 @endforelse
             </tbody>

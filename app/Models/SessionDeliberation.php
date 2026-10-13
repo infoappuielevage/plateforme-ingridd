@@ -109,6 +109,25 @@ class SessionDeliberation extends Model
     }
 
     /**
+     * Classe CSS pour afficher ce cycle sous forme de badge coloré — demande
+     * explicite du client ("fait la même chose que ce qu'on a fait pour le
+     * PV de soutenance pour les Cycle, les couleurs..."), même principe que
+     * App\Models\PvSoutenance::niveauBadgeClasse(). Réutilise DIRECTEMENT les
+     * classes .bg-niveau-{licence,master,doctorat} (voir public/css/style.css)
+     * plutôt que de dupliquer une famille .bg-cycle-* séparée : les clés
+     * CYCLE_LICENCE/CYCLE_MASTER/CYCLE_DOCTORAT de cette classe utilisent
+     * EXACTEMENT les mêmes valeurs ('licence'/'master'/'doctorat') que
+     * PvSoutenance::NIVEAU_LICENCE/NIVEAU_MASTER/NIVEAU_DOCTORAT — Licence,
+     * Master et Doctorat gardent ainsi la même couleur partout dans
+     * l'application, qu'on regarde un PV de soutenance ou une session de
+     * délibération.
+     */
+    public function cycleBadgeClasse(): string
+    {
+        return array_key_exists($this->cycle, self::CYCLES) ? 'bg-niveau-'.$this->cycle : 'text-bg-secondary';
+    }
+
+    /**
      * Numéros de semestre (Licence/Master) ou d'année de thèse (Doctorat) à
      * prévoir pour CE cycle — utilisé à la fois pour pré-créer les cases à
      * la création (voir SessionDeliberationController::store()) et pour

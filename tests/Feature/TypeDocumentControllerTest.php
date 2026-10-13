@@ -8,6 +8,7 @@ use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\CaptureExportExcel;
 use Tests\TestCase;
 
 /**
@@ -19,7 +20,25 @@ use Tests\TestCase;
  */
 class TypeDocumentControllerTest extends TestCase
 {
+    use CaptureExportExcel;
     use RefreshDatabase;
+
+    /** export() respecte les mêmes filtres que index() (même requeteListe() partagée, voir le docblock d'export()). */
+    public function test_lexport_respecte_les_filtres_de_la_liste(): void
+    {
+        $admin = User::factory()->admin()->create();
+        TypeDocument::factory()->create(['code' => 'VISIBLE', 'libelle' => 'Contrat visible']);
+        TypeDocument::factory()->create(['code' => 'AUTRE', 'libelle' => 'Autre type']);
+
+        $reponse = $this->actingAs($admin)
+            ->get(route('gestion.types-documents.export', ['recherche' => 'visible']))
+            ->assertOk();
+
+        $lignes = array_values($this->lignesExportees($reponse->baseResponse));
+
+        $this->assertCount(1, $lignes);
+        $this->assertSame(['VISIBLE', 'Contrat visible'], array_slice($lignes[0], 0, 2));
+    }
 
     public function test_la_liste_est_accessible_a_un_admin(): void
     {

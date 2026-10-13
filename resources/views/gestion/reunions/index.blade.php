@@ -3,7 +3,7 @@
 @section('title', 'PV de réunion')
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">PV de réunion</h1>
         <p class="text-muted small mb-0">
@@ -21,6 +21,9 @@
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
             @endif
+            <a href="{{ route('gestion.reunions.export', request()->query()) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-excel"></i> Exporter
+            </a>
             @if (\App\Support\ResourceAccess::can('reunions', 'create'))
                 <a href="{{ route('gestion.reunions.create') }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg"></i> Nouvelle réunion
@@ -38,21 +41,54 @@
     </div>
 @endif
 
+{{-- Onglets par année académique — remplace l'ancien filtre "Année
+     académique" à liste déroulante, demande explicite du client ("fait de
+     même pour les PV de réunion pour les couleurs et pour le tableau fait
+     par année académique"). Même principe que resources/views/gestion/pv-soutenances/index.blade.php
+     (onglets par niveau), à une différence près : ce référentiel est OUVERT
+     (une nouvelle année créée chaque année), donc chaque onglet reçoit sa
+     couleur PAR ROTATION plutôt qu'une teinte dédiée — voir
+     App\Models\AnneeAcademique::paletteIndex() et public/css/style.css
+     (classes .palette-tab-N). L'onglet "Toutes" réutilise directement
+     .niveau-tab-tous (déjà générique, pas spécifique au niveau).
+
+     .nav-tabs-scroll (en plus de .nav-tabs-niveaux, pas à sa place) : sur
+     retour du client ("si les années académiques s'accumulent ça sera
+     vilain à voir sans scroller") — contrairement à Niveau/Cycle (nombre
+     fixe), ce référentiel grandit chaque année, donc les onglets restent
+     sur UNE SEULE ligne qui défile horizontalement plutôt que de passer à
+     la ligne — voir public/css/style.css. --}}
+@unless ($corbeille)
+    <ul class="nav nav-tabs-niveaux nav-tabs-scroll mb-3">
+        <li class="nav-item">
+            <a class="nav-link niveau-tab-tous {{ $anneeActifId === null ? 'active' : '' }}"
+               href="{{ route('gestion.reunions.index', array_merge(request()->except('page'), ['annee_academique_id' => null])) }}">
+                Toutes
+            </a>
+        </li>
+        @foreach ($anneesAcademiques as $annee)
+            <li class="nav-item">
+                <a class="nav-link palette-tab-{{ $annee->paletteIndex() }} {{ $anneeActifId === $annee->id ? 'active' : '' }}"
+                   href="{{ route('gestion.reunions.index', array_merge(request()->except('page'), ['annee_academique_id' => $annee->id])) }}">
+                    {{ $annee->libelle }}
+                </a>
+            </li>
+        @endforeach
+    </ul>
+@endunless
+
 <div class="card shadow-sm p-3 mb-3">
     <form method="GET" action="{{ route('gestion.reunions.index') }}" class="row g-2 align-items-end" id="formFiltresReunions">
         @if ($corbeille)
             <input type="hidden" name="corbeille" value="1">
         @endif
-        <div class="col-md-3">
-            <label class="form-label small">Année académique</label>
-            <select name="annee_academique_id" class="form-select filtre-auto">
-                <option value="">Toutes</option>
-                @foreach ($anneesAcademiques as $annee)
-                    <option value="{{ $annee->id }}" @selected(request('annee_academique_id') == $annee->id)>{{ $annee->libelle }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div class="col-md-3">
+        {{-- L'année académique active (onglet) est de la navigation, pas un
+             filtre à saisir ici : on le reporte tel quel pour que les autres
+             filtres restent dans le même onglet. --}}
+        @if ($anneeActifId !== null)
+            <input type="hidden" name="annee_academique_id" value="{{ $anneeActifId }}">
+        @endif
+        <div class="col-md-5">
             <label class="form-label small">Type de réunion</label>
             <select name="sous_type_document_id" class="form-select filtre-auto">
                 <option value="">Tous</option>
@@ -61,15 +97,15 @@
                 @endforeach
             </select>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-5">
             <label class="form-label small">Recherche (description)</label>
             <input type="text" name="recherche" id="rechercheFiltreReunions" class="form-control" value="{{ request('recherche') }}">
         </div>
         <div class="col-md-2 d-flex gap-2">
             <button type="submit" class="btn btn-primary flex-grow-1" title="Filtrer"><i class="bi bi-search"></i> Filtrer</button>
-            {{-- Réinitialise tous les filtres d'un coup — n'apparaît que si au moins un filtre est actif. --}}
-            @if (request()->hasAny(['annee_academique_id', 'sous_type_document_id', 'recherche']))
-                <a href="{{ route('gestion.reunions.index', $corbeille ? ['corbeille' => 1] : []) }}"
+            {{-- Réinitialise les filtres (pas l'onglet d'année académique) — n'apparaît que si au moins un filtre est actif. --}}
+            @if (request()->hasAny(['sous_type_document_id', 'recherche']))
+                <a href="{{ route('gestion.reunions.index', array_filter(['corbeille' => $corbeille ? 1 : null, 'annee_academique_id' => $anneeActifId])) }}"
                    class="btn btn-outline-secondary" title="Réinitialiser les filtres">
                     <i class="bi bi-arrow-clockwise"></i>
                 </a>
@@ -112,24 +148,68 @@
     }
 </script>
 
+@php $peutSupprimerReunions = \App\Support\ResourceAccess::can('reunions', 'delete'); @endphp
+
+@if ($peutSupprimerReunions)
+    {{-- Formulaire "porteur" de la sélection groupée — même principe que
+         resources/views/gestion/documents/index.blade.php. --}}
+    <form id="formSelectionReunions" method="POST" class="d-none">
+        @csrf
+    </form>
+
+    <div id="barreActionsGroupeesReunions" class="alert alert-secondary d-none align-items-center justify-content-between gap-2 mb-3">
+        <span><strong id="compteurSelectionReunions">0</strong> réunion(s) sélectionnée(s)</span>
+        <div class="d-flex gap-2">
+            @if (! $corbeille)
+                <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille-groupee') }}"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Mettre les réunions sélectionnées à la corbeille ?');">
+                    <i class="bi bi-trash3"></i> Mettre à la corbeille
+                </button>
+            @else
+                <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille.restaurer-groupe') }}"
+                        class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                </button>
+                <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille.force-destroy-groupe') }}"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Supprimer définitivement les réunions sélectionnées ? Cette action est irréversible.');">
+                    <i class="bi bi-x-circle"></i> Supprimer définitivement
+                </button>
+            @endif
+        </div>
+    </div>
+@endif
+
 <div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th>Date</th>
-                    <th>Année académique</th>
-                    <th>Type</th>
-                    <th>Description</th>
-                    <th>Fichiers déposés</th>
+                    @if ($peutSupprimerReunions)
+                        <th style="width: 2rem;">
+                            <input type="checkbox" class="form-check-input" id="selectionnerTousReunions" title="Tout sélectionner">
+                        </th>
+                    @endif
+                    <x-th-triable cle="date_reunion" libelle="Date" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.reunions.index" />
+                    <x-th-triable cle="annee_academique" libelle="Année académique" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.reunions.index" />
+                    <x-th-triable cle="type" libelle="Type" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.reunions.index" />
+                    <x-th-triable cle="description" libelle="Description" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.reunions.index" />
+                    <x-th-triable cle="fichiers_deposes" libelle="Fichiers déposés" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.reunions.index" />
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse ($reunions as $item)
                     <tr>
+                        @if ($peutSupprimerReunions)
+                            <td>
+                                <input type="checkbox" class="form-check-input case-selection-reunion"
+                                       name="reunions[]" value="{{ $item->id }}" form="formSelectionReunions">
+                            </td>
+                        @endif
                         <td>{{ $item->date_reunion?->format('d/m/Y') }}</td>
-                        <td>{{ $item->anneeAcademique->libelle }}</td>
+                        <td><span class="badge bg-palette-{{ $item->anneeAcademique->paletteIndex() }}">{{ $item->anneeAcademique->libelle }}</span></td>
                         <td>{{ $item->typeLibelle() }}</td>
                         <td>{{ \Illuminate\Support\Str::limit($item->description, 60) }}</td>
                         <td class="text-muted small">
@@ -179,7 +259,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6">
+                        <td colspan="{{ $peutSupprimerReunions ? 7 : 6 }}">
                             <div class="empty-state text-center py-5">
                                 <i class="bi bi-people fs-1 text-muted"></i>
                                 <p class="text-muted mb-0">
@@ -200,3 +280,46 @@
     @endif
 </div>
 @endsection
+
+@if ($peutSupprimerReunions)
+    @section('scripts')
+        <script>
+            (function () {
+                const casesLigne = document.querySelectorAll('.case-selection-reunion');
+                if (! casesLigne.length) return;
+
+                const caseTout = document.getElementById('selectionnerTousReunions');
+                const barre = document.getElementById('barreActionsGroupeesReunions');
+                const compteur = document.getElementById('compteurSelectionReunions');
+
+                function casesCochees() {
+                    return Array.from(casesLigne).filter(function (c) { return c.checked; });
+                }
+
+                function actualiserBarre() {
+                    const nombre = casesCochees().length;
+                    barre.classList.toggle('d-none', nombre === 0);
+                    barre.classList.toggle('d-flex', nombre > 0);
+                    compteur.textContent = nombre;
+                    if (caseTout) {
+                        caseTout.checked = nombre > 0 && nombre === casesLigne.length;
+                        caseTout.indeterminate = nombre > 0 && nombre < casesLigne.length;
+                    }
+                }
+
+                casesLigne.forEach(function (c) {
+                    c.addEventListener('change', actualiserBarre);
+                });
+
+                if (caseTout) {
+                    caseTout.addEventListener('change', function () {
+                        casesLigne.forEach(function (c) { c.checked = caseTout.checked; });
+                        actualiserBarre();
+                    });
+                }
+
+                actualiserBarre();
+            })();
+        </script>
+    @endsection
+@endif

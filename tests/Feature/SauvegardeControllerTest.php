@@ -87,6 +87,27 @@ class SauvegardeControllerTest extends TestCase
             ->assertSee('ingridd_2026-01-01.zip');
     }
 
+    /**
+     * Demande explicite du client : tous les tableaux de l'espace de gestion
+     * limités à 8 lignes par page, le reste accessible par numéro de page.
+     * Cet écran n'a pas de modèle Eloquent (simples fichiers sur disque,
+     * voir le docblock de la classe) : SauvegardeController::paginerListe()
+     * reproduit ->paginate(8) "à la main" via LengthAwarePaginator.
+     */
+    public function test_la_liste_des_sauvegardes_est_paginee_a_huit_par_page(): void
+    {
+        Storage::fake('sauvegardes');
+        foreach (range(1, 10) as $i) {
+            Storage::disk('sauvegardes')->put("sauvegarde-demo-{$i}.zip", 'contenu');
+        }
+        $admin = User::factory()->admin()->create();
+
+        $reponse = $this->actingAs($admin)->get(route('gestion.sauvegardes.index'));
+
+        $reponse->assertOk();
+        $reponse->assertViewHas('sauvegardes', fn ($sauvegardes) => $sauvegardes->perPage() === 8 && $sauvegardes->total() === 10);
+    }
+
     public function test_un_admin_peut_supprimer_une_sauvegarde(): void
     {
         Storage::fake('sauvegardes');

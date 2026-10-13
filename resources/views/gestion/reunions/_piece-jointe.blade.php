@@ -19,7 +19,8 @@
     <a href="{{ route('documents.telecharger', $fichier->document_id) }}" class="btn btn-sm btn-outline-secondary" title="Télécharger">
         <i class="bi bi-download"></i>
     </a>
-    @if ($peutSupprimer)
+    @include('gestion.partials._lien_historique', ['type' => \App\Models\Document::class, 'id' => $fichier->document_id])
+    @if ($peutSupprimer && ! $fichier->document->estVerrouille())
         <form method="POST" action="{{ route('gestion.reunions.pieces-jointes.destroy', ['reunion' => $reunion->id, 'fichier' => $fichier->id]) }}"
               onsubmit="return confirm('Retirer cette pièce jointe ? Cette action est définitive.');">
             @csrf

@@ -83,6 +83,42 @@ class SecretariatControllerTest extends TestCase
             ->assertNotFound();
     }
 
+    /**
+     * Faille de sécurité corrigée sur demande explicite du client ("revoir
+     * la sécurité pour éviter l'accessibilité à des pages confidentielles
+     * sans autorisation") : cette page ne vérifiait que le droit générique
+     * "documents" -> "Voir", sans jamais tenir compte de
+     * App\Support\TypesEcranDedie — un rôle n'ayant QUE ce droit générique
+     * (ex. "Gestionnaire", voir database/seeders/RoleSeeder.php, qui n'a PAS
+     * le droit "etudiants") pouvait consulter ici une liste complète de
+     * pièces de dossier étudiant ou de PV de soutenance en tapant
+     * directement l'URL, même si le menu ne pointe jamais vers ces codes
+     * (`epingle_secretariat` leur a été explicitement retiré, voir
+     * database/seeders/TypeDocumentSeeder.php) — 404, même pour un
+     * administrateur : ces types n'ont plus leur place ici du tout, pas
+     * seulement une question de droit.
+     */
+    /** @dataProvider codesAvecEcranDedie */
+    public function test_les_types_a_ecran_dedie_sont_desormais_inaccessibles_au_secretariat(string $code): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => $code]);
+
+        $this->actingAs($admin)
+            ->get(route('gestion.secretariat', ['code' => $code]))
+            ->assertNotFound();
+    }
+
+    /** @return iterable<string, array{0: string}> */
+    public static function codesAvecEcranDedie(): iterable
+    {
+        yield 'PV de soutenance' => ['PV_SOUTENANCE'];
+        yield 'PV de délibération' => ['PV_DELIBERATION'];
+        yield 'Relevés de notes' => ['RELEVE_NOTES'];
+        yield 'PV de réunion' => ['PV_REUNION'];
+        yield 'Dossier étudiant' => ['DOSSIER_ETUDIANT'];
+    }
+
     public function test_un_role_sans_droit_de_vue_sur_les_documents_ne_peut_pas_acceder_a_la_page(): void
     {
         Role::query()->create([
@@ -98,17 +134,23 @@ class SecretariatControllerTest extends TestCase
             ->assertForbidden();
     }
 
+    /**
+     * ATTESTATION, pas PV_SOUTENANCE (code à écran dédié depuis, voir
+     * App\Support\TypesEcranDedie et test_les_types_a_ecran_dedie_sont_desormais_inaccessibles_au_secretariat
+     * ci-dessous) : ce test porte sur le filtre "corbeille" lui-même, pas
+     * sur cette exclusion.
+     */
     public function test_le_mode_corbeille_ne_montre_que_les_documents_supprimes(): void
     {
         $admin = User::factory()->admin()->create();
-        $type = TypeDocument::factory()->create(['code' => 'PV_SOUTENANCE', 'champs_soutenance_actifs' => true]);
+        $type = TypeDocument::factory()->create(['code' => 'ATTESTATION', 'champs_diplome_actifs' => true]);
 
         $actif = Document::factory()->create(['type_document_id' => $type->id, 'nom_original' => 'actif.pdf']);
         $corbeille = Document::factory()->create(['type_document_id' => $type->id, 'nom_original' => 'corbeille.pdf']);
         $corbeille->delete();
 
         $this->actingAs($admin)
-            ->get(route('gestion.secretariat', ['code' => 'PV_SOUTENANCE', 'corbeille' => 1]))
+            ->get(route('gestion.secretariat', ['code' => 'ATTESTATION', 'corbeille' => 1]))
             ->assertOk()
             ->assertSee('corbeille.pdf')
             ->assertDontSee('actif.pdf');

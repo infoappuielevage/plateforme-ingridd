@@ -25,6 +25,25 @@ class RoleControllerTest extends TestCase
             ->assertForbidden();
     }
 
+    /**
+     * Demande explicite du client : tous les tableaux de l'espace de gestion
+     * limités à 8 lignes par page, le reste accessible par numéro de page.
+     * Cet écran n'utilisait auparavant aucune pagination (->get(), tout
+     * affiché d'un coup) — voir RoleController::index().
+     */
+    public function test_la_liste_des_roles_est_paginee_a_huit_par_page(): void
+    {
+        $admin = User::factory()->admin()->create();
+        foreach (range(1, 10) as $i) {
+            Role::query()->create(['slug' => "role-demo-{$i}", 'name' => "Rôle démo {$i}", 'permissions' => []]);
+        }
+
+        $reponse = $this->actingAs($admin)->get(route('gestion.roles.index'));
+
+        $reponse->assertOk();
+        $reponse->assertViewHas('roles', fn ($roles) => $roles->perPage() === 8);
+    }
+
     public function test_un_admin_peut_creer_un_role_avec_sa_matrice_de_permissions(): void
     {
         $admin = User::factory()->admin()->create();

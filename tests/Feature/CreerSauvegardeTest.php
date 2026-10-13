@@ -36,6 +36,46 @@ class CreerSauvegardeTest extends TestCase
         $this->assertCount(1, $archives);
     }
 
+    /**
+     * Revue de sécurité demandée par le client : les fichiers de travail
+     * (archive en cours, dump mysqldump) passent désormais par un dossier
+     * privé sous storage/app/ (voir CreerSauvegarde::dossierTemporaire())
+     * plutôt que le dossier temp système, partagé par toute la machine — et
+     * doivent être nettoyés après coup, pas laissés traîner là non plus.
+     */
+    public function test_le_dossier_temporaire_prive_ne_garde_aucun_fichier_apres_une_sauvegarde_reussie(): void
+    {
+        Storage::fake('sauvegardes');
+
+        $this->artisan('ingridd:sauvegarde')->assertSuccessful();
+
+        $dossier = storage_path('app/sauvegardes-tmp');
+        $this->assertDirectoryExists($dossier);
+        $this->assertSame([], glob($dossier.DIRECTORY_SEPARATOR.'*'));
+    }
+
+    /**
+     * Auto-guérison (voir CreerSauvegarde::nettoyerDebrisAnciens()) : un
+     * fichier de travail laissé par une exécution précédente interrompue
+     * (plantage, coupure de courant, redémarrage en plein milieu...) ne
+     * doit pas s'accumuler indéfiniment dans ce dossier — la sauvegarde
+     * SUIVANTE qui tourne doit le balayer d'elle-même au démarrage.
+     */
+    public function test_un_reliquat_dune_execution_precedente_est_balaye_au_demarrage(): void
+    {
+        Storage::fake('sauvegardes');
+
+        $dossier = storage_path('app/sauvegardes-tmp');
+        if (! is_dir($dossier)) {
+            mkdir($dossier, 0755, true);
+        }
+        file_put_contents($dossier.DIRECTORY_SEPARATOR.'ingridd-sauvegardeABCDEF.tmp', 'reliquat dune ancienne execution');
+
+        $this->artisan('ingridd:sauvegarde')->assertSuccessful();
+
+        $this->assertSame([], glob($dossier.DIRECTORY_SEPARATOR.'*'));
+    }
+
     public function test_la_commande_purge_les_sauvegardes_au_dela_du_nombre_a_conserver(): void
     {
         Storage::fake('sauvegardes');

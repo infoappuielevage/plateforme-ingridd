@@ -3,7 +3,7 @@
 @section('title', $corbeille ? 'Corbeille des documents' : 'Documents')
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">{{ $corbeille ? 'Corbeille des documents' : 'Documents' }}</h1>
         <p class="text-muted small mb-0">
@@ -18,6 +18,9 @@
         @else
             <a href="{{ route('gestion.documents.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-trash3"></i> Corbeille
+            </a>
+            <a href="{{ route('gestion.documents.export', request()->query()) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-excel"></i> Exporter
             </a>
             @if (\App\Support\ResourceAccess::can('documents', 'create'))
                 <a href="{{ route('gestion.documents.create') }}" class="btn btn-primary">
@@ -164,9 +167,10 @@
                     @endif
                     <th>Type</th>
                     <th>Filière / Niveau / Année</th>
-                    <th>Fichier</th>
-                    <th>Ajouté par</th>
-                    <th>Statut</th>
+                    <x-th-triable cle="nom_original" libelle="Fichier" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.documents.index" />
+                    <x-th-triable cle="ajoute_par" libelle="Ajouté par" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.documents.index" />
+                    <x-th-triable cle="statut_retrait" libelle="Statut" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.documents.index" />
+                    <th>Verrouillage</th>
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
@@ -209,6 +213,11 @@
                                 <span class="text-muted small">—</span>
                             @endif
                         </td>
+                        <td>
+                            @if (! $corbeille)
+                                @include('gestion.partials._verrou_document', ['document' => $document])
+                            @endif
+                        </td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">
                                 @if (! $corbeille)
@@ -218,6 +227,7 @@
                                     <a href="{{ route('documents.telecharger', $document) }}" class="btn btn-outline-secondary" title="Télécharger">
                                         <i class="bi bi-download"></i>
                                     </a>
+                                    @include('gestion.partials._lien_historique', ['type' => \App\Models\Document::class, 'id' => $document->id])
 
                                     @if (\App\Support\ResourceAccess::can('documents', 'edit'))
                                         @if ($document->statutRetraitLibelle())
@@ -268,7 +278,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="{{ $peutSupprimer ? 7 : 6 }}">
+                        <td colspan="{{ $peutSupprimer ? 8 : 7 }}">
                             <div class="empty-state text-center py-5">
                                 <i class="bi bi-inbox fs-1 text-muted"></i>
                                 <p class="text-muted mb-0">

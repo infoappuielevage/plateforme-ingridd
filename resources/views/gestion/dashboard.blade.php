@@ -3,7 +3,149 @@
 @section('title', 'Tableau de bord')
 
 @section('content')
-<h1 class="h3">Tableau de bord {{ config('app.name') }}</h1>
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0">Tableau de bord {{ config('app.name') }}</h1>
+</div>
+
+{{--
+    "Mon compte" + calendrier — demande explicite du client : que la personne
+    connectée voie tout de suite son nom, son rôle et ses droits d'accès
+    réels (plutôt que de devoir demander), et dispose d'un calendrier du mois
+    en cours pour s'orienter dans les dates (volontairement sans évènements,
+    voir DashboardController::calendrier()).
+
+    Rendu plus "vivant" (demande explicite du client, "rends ça plus vivante
+    [...] avec les couleurs et tout ce qu'il faut") : en-têtes de carte
+    colorés (header-primary/header-info, même convention que les autres
+    écrans — voir public/css/style.css), avatar à initiale (même motif que le
+    bouton utilisateur du menu du haut, voir resources/views/layouts/
+    gestion.blade.php), droits d'accès résumés par un badge coloré en plus du
+    tableau détaillé, et week-ends teintés dans le calendrier.
+--}}
+<div class="row g-3 mb-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header header-primary d-flex align-items-center gap-2">
+                <i class="bi bi-person-circle"></i> Mon compte
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+                    <span class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0" style="width:48px;height:48px;font-size:1.1rem;">
+                        {{ \Illuminate\Support\Str::of($monCompte['nom'])->substr(0, 1) }}
+                    </span>
+                    <div>
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <span class="fw-semibold">{{ $monCompte['nom'] }}</span>
+                            <span class="badge bg-primary-subtle text-primary-emphasis">{{ $monCompte['roleLibelle'] }}</span>
+                        </div>
+                        <div class="text-muted small"><i class="bi bi-envelope"></i> {{ $monCompte['email'] }}</div>
+                    </div>
+                </div>
+
+                <div class="text-muted small mb-3">
+                    <i class="bi bi-clock-history"></i>
+                    Dernière connexion :
+                    {{ $monCompte['derniereConnexionAt']?->format('d/m/Y H:i') ?? 'Jamais' }}
+                    @if ($monCompte['derniereConnexionAt'])
+                        depuis {{ $monCompte['derniereConnexionIp'] ?? '—' }}
+                    @endif
+                </div>
+
+                <h2 class="h6 d-flex align-items-center gap-2">
+                    <i class="bi bi-shield-lock"></i> Mes droits d'accès
+                    @if ($monCompte['estAdmin'])
+                        <span class="badge text-bg-success">Accès complet</span>
+                    @else
+                        @php
+                            $nombreRessourcesAutorisees = collect(\App\Support\ResourceAccess::RESSOURCES)->keys()
+                                ->filter(fn ($cle) => collect(data_get($monCompte['permissions'], $cle, []))->contains(true))
+                                ->count();
+                        @endphp
+                        <span class="badge text-bg-info">{{ $nombreRessourcesAutorisees }} / {{ count(\App\Support\ResourceAccess::RESSOURCES) }} ressources</span>
+                    @endif
+                </h2>
+                @if ($monCompte['estAdmin'])
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-shield-check text-success"></i>
+                        Accès complet à toutes les fonctionnalités de la plateforme.
+                    </p>
+                @else
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Ressource</th>
+                                    @foreach (\App\Support\ResourceAccess::ACTIONS as $libelleAction)
+                                        <th class="text-center">{{ $libelleAction }}</th>
+                                    @endforeach
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (\App\Support\ResourceAccess::RESSOURCES as $cle => $libelle)
+                                    <tr>
+                                        <td>
+                                            <i class="bi {{ \App\Support\ResourceAccess::ICONES[$cle] ?? 'bi-ui-checks' }} text-muted me-1"></i>
+                                            {{ $libelle }}
+                                        </td>
+                                        @foreach (\App\Support\ResourceAccess::ACTIONS as $action => $libelleAction)
+                                            <td class="text-center">
+                                                @if ($cle === 'audit_logs' && $action !== 'view')
+                                                    <span class="text-muted">—</span>
+                                                @elseif (data_get($monCompte['permissions'], "{$cle}.{$action}", false))
+                                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                                @else
+                                                    <i class="bi bi-dash text-muted"></i>
+                                                @endif
+                                            </td>
+                                        @endforeach
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+
+                <a href="{{ route('gestion.profil.edit') }}" class="btn btn-sm btn-outline-primary mt-3">
+                    <i class="bi bi-pencil"></i> Modifier mon profil
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-header header-info d-flex align-items-center gap-2">
+                <i class="bi bi-calendar3"></i> {{ $calendrier['libelleMois'] }}
+            </div>
+            <div class="card-body">
+                <table class="table table-sm text-center mb-0 ingridd-calendrier">
+                    <thead>
+                        <tr>
+                            <th>Lun</th>
+                            <th>Mar</th>
+                            <th>Mer</th>
+                            <th>Jeu</th>
+                            <th>Ven</th>
+                            <th class="ingridd-calendrier-weekend">Sam</th>
+                            <th class="ingridd-calendrier-weekend">Dim</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($calendrier['semaines'] as $semaine)
+                            <tr>
+                                @foreach ($semaine as $index => $jour)
+                                    <td class="{{ $jour && $jour['estAujourdhui'] ? 'ingridd-calendrier-aujourdhui' : (in_array($index, [5, 6], true) ? 'ingridd-calendrier-weekend' : '') }}">
+                                        {{ $jour['numero'] ?? '' }}
+                                    </td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-4 stagger">
     @foreach ($cartes as $carte)

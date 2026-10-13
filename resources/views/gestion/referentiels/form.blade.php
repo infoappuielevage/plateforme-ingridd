@@ -6,6 +6,18 @@
 <h1 class="h3">{{ $definition['pluriel'] }}</h1>
 <h2 class="h5">{{ $item ? 'Modifier' : 'Ajouter' }}</h2>
 
+{{-- Ce formulaire n'affichait jusqu'ici AUCUNE erreur de validation (ni ici,
+     ni via @error sur les champs) : une erreur retournait silencieusement à
+     ce même formulaire sans rien expliquer, ex. unicité du libellé pour les
+     années académiques (voir ReferentielController::valider()). --}}
+@if ($errors->any())
+    <div class="alert alert-danger" style="max-width: 620px;">
+        @foreach ($errors->all() as $erreur)
+            <div>{{ $erreur }}</div>
+        @endforeach
+    </div>
+@endif
+
 <div class="card shadow-sm" style="max-width: 620px;">
 <div class="card-body">
 <form method="POST"

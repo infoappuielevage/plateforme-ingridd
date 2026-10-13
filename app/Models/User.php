@@ -30,10 +30,11 @@ class User extends Authenticatable
     public const ROLE_CONSULTATION = 'consultation';
 
     /**
-     * `avatar`, `derniere_connexion_at` et `derniere_connexion_ip` sont
-     * volontairement absents : ils ne doivent jamais être modifiables via un
-     * simple ->update() de masse (voir ModifierProfil et
-     * JournaliserActiviteConnexion, qui utilisent forceFill()).
+     * `avatar`, `derniere_connexion_at`, `derniere_connexion_ip` et
+     * `bloque_at` sont volontairement absents : ils ne doivent jamais être
+     * modifiables via un simple ->update() de masse (voir ModifierProfil et
+     * JournaliserActiviteConnexion, qui utilisent forceFill(), ainsi que
+     * UserController::basculerBlocage() pour `bloque_at`).
      */
     protected $fillable = [
         'name',
@@ -53,7 +54,20 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'derniere_connexion_at' => 'datetime',
+            'bloque_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Compte bloqué par un administrateur (voir UserController::
+     * basculerBlocage()) — un compte bloqué ne peut plus se connecter
+     * (App\Http\Controllers\Auth\AuthController::connexion()) et est
+     * immédiatement déconnecté s'il a encore une session active
+     * (App\Http\Middleware\RejeterUtilisateurBloque).
+     */
+    public function estBloque(): bool
+    {
+        return ! is_null($this->bloque_at);
     }
 
     /**

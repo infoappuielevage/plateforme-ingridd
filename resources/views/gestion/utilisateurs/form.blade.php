@@ -46,12 +46,12 @@
 
         <div class="col-12">
             <label class="form-label">Mot de passe @unless ($utilisateur) <span class="text-danger">*</span> @endunless</label>
-            <input type="password" name="password" class="form-control" minlength="8" autocomplete="new-password"
-                   {{ $utilisateur ? '' : 'required' }}>
+            <x-champ-mot-de-passe name="password" minlength="10" autocomplete="new-password"
+                   :required="! $utilisateur" />
             @if ($utilisateur)
                 <div class="form-text">Laisser vide pour ne pas modifier le mot de passe existant.</div>
             @else
-                <div class="form-text">8 caractères minimum.</div>
+                <div class="form-text">10 caractères minimum, avec au moins une majuscule, une minuscule et un chiffre.</div>
             @endif
         </div>
     </div>

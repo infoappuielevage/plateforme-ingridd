@@ -105,6 +105,16 @@ class SessionReleve extends Model
     }
 
     /**
+     * Classe CSS pour afficher ce cycle sous forme de badge coloré — voir
+     * App\Models\SessionDeliberation::cycleBadgeClasse() (identique, miroir
+     * volontaire de cette classe) pour le détail complet du raisonnement.
+     */
+    public function cycleBadgeClasse(): string
+    {
+        return array_key_exists($this->cycle, self::CYCLES) ? 'bg-niveau-'.$this->cycle : 'text-bg-secondary';
+    }
+
+    /**
      * Numéros de semestre (Licence/Master) ou d'année de thèse (Doctorat) à
      * prévoir pour CE cycle — voir SessionDeliberation::numerosAttendus()
      * (identique).

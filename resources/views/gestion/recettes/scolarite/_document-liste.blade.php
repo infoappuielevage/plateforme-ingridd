@@ -1,0 +1,30 @@
+{{--
+    Partiel d'un élément d'une des deux listes en nombre libre
+    (bordereau/autre, voir show.blade.php) — même principe que
+    resources/views/gestion/reunions/_piece-jointe.blade.php : toujours
+    rempli, pas de "Remplacer" (retirer supprime la ligne entièrement).
+    Variables attendues : $fichier (App\Models\RecetteScolariteFichier, avec
+    sa relation "document" déjà chargée), $recetteScolarite, $role,
+    $peutSupprimer.
+--}}
+<div class="d-flex flex-wrap align-items-center gap-2">
+    <a href="{{ route('documents.voir', $fichier->document_id) }}" target="_blank" rel="noopener" class="text-decoration-none" title="Voir dans un nouvel onglet">
+        <i class="bi bi-file-earmark-text"></i>
+        {{ $fichier->libelle() }}
+    </a>
+    <span class="text-muted small">({{ $fichier->document->nom_original }} — {{ $fichier->document->tailleFormatee() }})</span>
+    <a href="{{ route('documents.telecharger', $fichier->document_id) }}" class="btn btn-sm btn-outline-secondary" title="Télécharger">
+        <i class="bi bi-download"></i>
+    </a>
+    @include('gestion.partials._lien_historique', ['type' => \App\Models\Document::class, 'id' => $fichier->document_id])
+    @if ($peutSupprimer && ! $fichier->document->estVerrouille())
+        <form method="POST" action="{{ route('gestion.recettes.scolarite.liste.destroy', ['recetteScolarite' => $recetteScolarite->id, 'role' => $role, 'fichier' => $fichier->id]) }}"
+              onsubmit="return confirm('Retirer ce document ? Cette action est définitive.');">
+            @csrf
+            @method('DELETE')
+            <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer">
+                <i class="bi bi-trash3"></i>
+            </button>
+        </form>
+    @endif
+</div>

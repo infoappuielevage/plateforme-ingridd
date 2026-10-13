@@ -24,23 +24,27 @@
         <a href="{{ route('documents.telecharger', $rapport->document_id) }}" class="btn btn-sm btn-outline-secondary" title="Télécharger">
             <i class="bi bi-download"></i>
         </a>
-        @if ($peutModifier)
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#remplacerRapport{{ $reunion->id }}">
-                Remplacer
-            </button>
-        @endif
-        @if ($peutSupprimer)
-            <form method="POST" action="{{ route('gestion.reunions.rapport.destroy', $reunion->id) }}"
-                  onsubmit="return confirm('Retirer le rapport ? La case restera disponible pour un nouveau dépôt.');">
-                @csrf
-                @method('DELETE')
-                <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer">
-                    <i class="bi bi-trash3"></i>
+        @include('gestion.partials._lien_historique', ['type' => \App\Models\Document::class, 'id' => $rapport->document_id])
+        @include('gestion.partials._verrou_document', ['document' => $rapport->document])
+        @unless ($rapport->document->estVerrouille())
+            @if ($peutModifier)
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#remplacerRapport{{ $reunion->id }}">
+                    Remplacer
                 </button>
-            </form>
-        @endif
+            @endif
+            @if ($peutSupprimer)
+                <form method="POST" action="{{ route('gestion.reunions.rapport.destroy', $reunion->id) }}"
+                      onsubmit="return confirm('Retirer le rapport ? La case restera disponible pour un nouveau dépôt.');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer">
+                        <i class="bi bi-trash3"></i>
+                    </button>
+                </form>
+            @endif
+        @endunless
     </div>
-    @if ($peutModifier)
+    @if ($peutModifier && ! $rapport->document->estVerrouille())
         <div class="collapse mt-2" id="remplacerRapport{{ $reunion->id }}">
             <form method="POST" action="{{ route('gestion.reunions.rapport.store', $reunion->id) }}" enctype="multipart/form-data" class="d-flex gap-2">
                 @csrf

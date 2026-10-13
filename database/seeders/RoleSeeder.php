@@ -14,14 +14,19 @@ use Illuminate\Database\Seeder;
  * Chargées de cours) correspondent à l'organisation réelle d'INGRIDD —
  * demande explicite du client de les prévoir dès maintenant dans le
  * référentiel, PLUTÔT que d'attendre d'avoir fini de détailler qui a accès
- * à quoi. Créés avec `permissions = []` (aucun droit tant que rien n'est
- * coché) : App\Support\ResourceAccess::can() traite une ressource absente
- * comme "false", donc un tableau vide revient exactement à tout décocher —
- * rien de différent d'un rôle fraîchement créé depuis l'écran Rôles &
- * permissions. Le client affinera ce que chacun peut voir/gérer depuis cet
- * écran (Administration > Rôles & permissions), sans repasser par le code :
- * ce seeder ne fait qu'exister pour que ces cinq rôles soient là dès
- * l'installation plutôt qu'à créer un par un manuellement.
+ * à quoi.
+ *
+ * Créés avec un accès en LECTURE SEULE sur tout (même matrice que le rôle
+ * "Consultation") plutôt qu'avec `permissions = []` comme auparavant —
+ * demande explicite du client : avec aucun droit du tout, un compte utilisant
+ * l'un de ces rôles arrivait sur un tableau de bord qui semblait "pas à
+ * jour"/vide (carte "Documents" absente, "Documents récemment ajoutés"
+ * toujours vide, graphiques masqués — voir DashboardController::index(),
+ * qui masque correctement tout ça sans le droit "documents" -> "Voir"). La
+ * lecture seule est un point de départ sûr (aucune création/modification/
+ * suppression nulle part) que le client resserre ou élargit ensuite écran
+ * par écran depuis Administration > Rôles & permissions, sans repasser par
+ * le code.
  */
 class RoleSeeder extends Seeder
 {
@@ -39,10 +44,7 @@ class RoleSeeder extends Seeder
         $toutesLesActions = array_fill_keys(array_keys(ResourceAccess::ACTIONS), true);
         $permissionsCompletes = array_fill_keys(array_keys(ResourceAccess::RESSOURCES), $toutesLesActions);
 
-        $lectureSeule = array_map(
-            fn () => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            array_fill_keys(array_keys(ResourceAccess::RESSOURCES), null)
-        );
+        $lectureSeule = $this->permissionsLectureSeule();
 
         Role::query()->updateOrCreate(
             ['slug' => 'admin'],
@@ -80,17 +82,44 @@ class RoleSeeder extends Seeder
             $role = Role::query()->where('slug', $slug)->first();
 
             if ($role) {
-                // Le rôle existe déjà (créé par ce seeder précédemment, ou
-                // par le client depuis l'écran Rôles & permissions) : on ne
-                // touche plus à `permissions` une fois que le client a
-                // commencé à le configurer, seulement au `name` — rejouer ce
-                // seeder ne doit jamais effacer des droits déjà accordés.
-                $role->update(['name' => $nom]);
+                $donnees = ['name' => $nom];
+
+                // `permissions === []` : exactement l'état laissé par
+                // l'ancienne version de ce seeder, jamais encore ouvert
+                // depuis Rôles & permissions — on applique alors la lecture
+                // seule par défaut (voir le docblock de la classe). Dès que
+                // le client a enregistré quoi que ce soit depuis cet écran
+                // (même "tout décoché"), RoleController::valider()
+                // reconstruit toujours la matrice complète avec des `false`
+                // explicites, donc `permissions` n'est alors plus `[]` — ce
+                // test ne touche jamais à un rôle déjà configuré par le
+                // client, rejouer ce seeder restant sans danger.
+                if ($role->permissions === []) {
+                    $donnees['permissions'] = $lectureSeule;
+                }
+
+                $role->update($donnees);
 
                 continue;
             }
 
-            Role::query()->create(['slug' => $slug, 'name' => $nom, 'permissions' => []]);
+            Role::query()->create(['slug' => $slug, 'name' => $nom, 'permissions' => $lectureSeule]);
         }
+    }
+
+    /**
+     * Droit "Voir" sur toutes les ressources, rien d'autre — même matrice
+     * que le rôle "Consultation" ci-dessus, réutilisée comme valeur par
+     * défaut pour les rôles de App\Database\Seeders\RoleSeeder::
+     * ROLES_ORGANISATION (voir le docblock de la classe).
+     *
+     * @return array<string, array{view: bool, create: bool, edit: bool, delete: bool}>
+     */
+    protected function permissionsLectureSeule(): array
+    {
+        return array_map(
+            fn () => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
+            array_fill_keys(array_keys(ResourceAccess::RESSOURCES), null)
+        );
     }
 }

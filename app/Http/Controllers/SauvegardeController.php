@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Support\Formatage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
@@ -27,12 +29,12 @@ use Illuminate\Support\Facades\Storage;
  */
 class SauvegardeController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         abort_unless(Auth::user()?->role === User::ROLE_ADMIN, 403);
 
         return view('gestion.sauvegardes.index', [
-            'sauvegardes' => $this->lister(),
+            'sauvegardes' => $this->paginerListe($request),
         ]);
     }
 
@@ -106,5 +108,30 @@ class SauvegardeController extends Controller
             ->sortByDesc('horodatage')
             ->values()
             ->all();
+    }
+
+    /**
+     * Pagination manuelle à 8 par page (demande explicite du client, voir le
+     * commentaire équivalent dans UserController::index()) : lister() ne
+     * renvoie pas une requête Eloquent (ce sont de simples fichiers sur
+     * disque, voir le docblock de la classe), donc pas de ->paginate()
+     * disponible nativement — LengthAwarePaginator reproduit exactement le
+     * même comportement (et le même rendu Bootstrap 5, voir
+     * AppServiceProvider::boot()) à partir d'une Collection déjà chargée en
+     * mémoire.
+     */
+    protected function paginerListe(Request $request): LengthAwarePaginator
+    {
+        $toutes = collect($this->lister());
+        $parPage = 8;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+
+        return new LengthAwarePaginator(
+            $toutes->forPage($page, $parPage)->values(),
+            $toutes->count(),
+            $parPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
     }
 }

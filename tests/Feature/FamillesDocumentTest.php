@@ -39,6 +39,17 @@ class FamillesDocumentTest extends TestCase
         $this->assertContains('PV_REUNION', FamillesDocument::codesPour('gouvernance'));
     }
 
+    /**
+     * DOSSIER_ETUDIANT a rejoint l'onglet "Académique" en même temps que son
+     * écran dédié (voir App\Http\Controllers\EtudiantController) — aux côtés
+     * de LISTE_ETUDIANTS/RELEVE_NOTES/PV_DELIBERATION/PV_SOUTENANCE, les
+     * autres types liés aux étudiants.
+     */
+    public function test_dossier_etudiant_est_dans_longlet_academique(): void
+    {
+        $this->assertContains('DOSSIER_ETUDIANT', FamillesDocument::codesPour('academique'));
+    }
+
     public function test_codes_pour_tous_est_null(): void
     {
         $this->assertNull(FamillesDocument::codesPour('tous'));

@@ -3,7 +3,7 @@
 @section('title', 'Rôles & permissions')
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0">Rôles &amp; permissions</h1>
     <a href="{{ route('gestion.roles.create') }}" class="btn btn-primary">
         <i class="bi bi-plus-lg"></i> Ajouter
@@ -23,9 +23,9 @@
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th>Identifiant</th>
-                    <th>Nom</th>
-                    <th>Utilisateurs</th>
+                    <x-th-triable cle="slug" libelle="Identifiant" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.roles.index" />
+                    <x-th-triable cle="name" libelle="Nom" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.roles.index" />
+                    <x-th-triable cle="users_count" libelle="Utilisateurs" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.roles.index" />
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
@@ -65,5 +65,11 @@
             </tbody>
         </table>
     </div>
+
+    @if ($roles->hasPages())
+        <div class="card-footer bg-transparent">
+            {{ $roles->links('pagination::bootstrap-5') }}
+        </div>
+    @endif
 </div>
 @endsection

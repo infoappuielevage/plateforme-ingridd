@@ -13,6 +13,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\CaptureExportExcel;
 use Tests\TestCase;
 
 /**
@@ -31,7 +32,25 @@ use Tests\TestCase;
  */
 class ReunionControllerTest extends TestCase
 {
+    use CaptureExportExcel;
     use RefreshDatabase;
+
+    /** export() respecte les mêmes filtres que index() (même requeteListe() partagée, voir le docblock d'export()). */
+    public function test_lexport_respecte_les_filtres_de_la_liste(): void
+    {
+        $admin = User::factory()->admin()->create();
+        Reunion::factory()->create(['description' => 'Réunion du conseil de direction']);
+        Reunion::factory()->create(['description' => 'Réunion pédagogique']);
+
+        $reponse = $this->actingAs($admin)
+            ->get(route('gestion.reunions.export', ['recherche' => 'conseil']))
+            ->assertOk();
+
+        $lignes = array_values($this->lignesExportees($reponse->baseResponse));
+
+        $this->assertCount(1, $lignes);
+        $this->assertSame('Réunion du conseil de direction', $lignes[0][3]);
+    }
 
     public function test_un_admin_accede_a_la_liste(): void
     {
@@ -364,5 +383,109 @@ class ReunionControllerTest extends TestCase
         $this->assertSame('2026-11-01', $reunion->date_reunion->toDateString());
         $this->assertSame($nouveauSousType->id, $reunion->sous_type_document_id);
         $this->assertSame('Description corrigée', $reunion->description);
+    }
+
+    /**
+     * Actions groupées (sélection multiple, voir
+     * resources/views/gestion/reunions/index.blade.php) — MÊME PRINCIPE que
+     * tests/Feature/EtudiantControllerTest.php pour
+     * mettreCorbeilleGroupee()/restaurerGroupe()/forceDestroyGroupe(), sur
+     * demande explicite du client ("permettre de faire des sélections pour
+     * des actions sur les tableaux différents").
+     */
+    public function test_mise_a_la_corbeille_groupee(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reunionA = Reunion::factory()->create();
+        $reunionB = Reunion::factory()->create();
+        $reunionHorsSelection = Reunion::factory()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.corbeille-groupee'), [
+                'reunions' => [$reunionA->id, $reunionB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNotNull($reunionA->fresh()->deleted_at);
+        $this->assertNotNull($reunionB->fresh()->deleted_at);
+        $this->assertNull($reunionHorsSelection->fresh()->deleted_at);
+    }
+
+    public function test_restauration_groupee(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reunionA = Reunion::factory()->create();
+        $reunionB = Reunion::factory()->create();
+        $reunionA->delete();
+        $reunionB->delete();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.corbeille.restaurer-groupe'), [
+                'reunions' => [$reunionA->id, $reunionB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($reunionA->fresh()->deleted_at);
+        $this->assertNull($reunionB->fresh()->deleted_at);
+    }
+
+    /** Même raisonnement que forceDestroy() individuel : les documents encore attachés (rapport ou pièce jointe) sont mis à la corbeille avant de supprimer les réunions. */
+    public function test_suppression_definitive_groupee_met_les_documents_encore_attaches_a_la_corbeille(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reunionA = Reunion::factory()->create();
+        $reunionB = Reunion::factory()->create();
+        $documentA = Document::factory()->create();
+        $documentB = Document::factory()->create();
+        ReunionFichier::factory()->create(['reunion_id' => $reunionA->id, 'document_id' => $documentA->id]);
+        ReunionFichier::factory()->create(['reunion_id' => $reunionB->id, 'document_id' => $documentB->id]);
+        $reunionA->delete();
+        $reunionB->delete();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.corbeille.force-destroy-groupe'), [
+                'reunions' => [$reunionA->id, $reunionB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('reunions', ['id' => $reunionA->id]);
+        $this->assertDatabaseMissing('reunions', ['id' => $reunionB->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($documentA->id));
+        $this->assertNotNull(Document::onlyTrashed()->find($documentB->id));
+    }
+
+    /** Une sélection vide (ou absente) doit être refusée côté serveur, pas seulement empêchée par le JS du bouton. */
+    public function test_une_selection_vide_est_refusee(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.corbeille-groupee'), ['reunions' => []])
+            ->assertRedirect()
+            ->assertSessionHasErrors('reunions');
+    }
+
+    /** Sans le droit "delete" sur "reunions", les trois actions groupées restent interdites — même droit que les actions individuelles. */
+    public function test_les_actions_groupees_exigent_le_droit_de_suppression(): void
+    {
+        Role::query()->create([
+            'slug' => 'reunions_lecture_seule',
+            'name' => 'Lecture seule réunions',
+            'permissions' => ['reunions' => ['view' => true, 'delete' => false]],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'reunions_lecture_seule']);
+        $reunion = Reunion::factory()->create();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.reunions.corbeille-groupee'), ['reunions' => [$reunion->id]])
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.reunions.corbeille.restaurer-groupe'), ['reunions' => [$reunion->id]])
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.reunions.corbeille.force-destroy-groupe'), ['reunions' => [$reunion->id]])
+            ->assertForbidden();
     }
 }

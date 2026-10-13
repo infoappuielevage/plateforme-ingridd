@@ -224,6 +224,11 @@ h1.h3::after {
     background: linear-gradient(90deg, #1c4e80, #123a5e);
 }
 .stat-card.accent::before { background: linear-gradient(90deg, var(--ingridd-accent), var(--ingridd-accent-dark)); }
+/* Variantes success/info : même palette que .card-header.header-success/
+   header-info (voir plus bas) — utilisées par exemple sur les compteurs de
+   Paramètres > Verrouillage des documents. */
+.stat-card.success::before { background: linear-gradient(90deg, #198754, #146c43); }
+.stat-card.info::before { background: linear-gradient(90deg, #0f766e, #0b5c56); }
 
 .stat-icon {
     width: 46px; height: 46px; border-radius: 12px;
@@ -232,6 +237,10 @@ h1.h3::after {
     background: rgba(var(--bs-primary-rgb), 0.12); color: var(--bs-primary);
 }
 .stat-card.accent .stat-icon { background: rgba(242, 160, 61, 0.16); color: var(--ingridd-accent-dark); }
+.stat-card.success .stat-icon { background: rgba(25, 135, 84, 0.14); color: #198754; }
+.stat-card.info .stat-icon { background: rgba(15, 118, 110, 0.14); color: #0f766e; }
+[data-bs-theme="dark"] .stat-card.success .stat-icon { background: rgba(25, 135, 84, .22); color: #6ee7b7; }
+[data-bs-theme="dark"] .stat-card.info .stat-icon { background: rgba(94, 234, 212, .18); color: #5eead4; }
 
 /* ================= En-têtes de section ================= */
 .section-header {
@@ -258,11 +267,263 @@ h1.h3::after {
     margin-bottom: 2rem;
 }
 
+/* ================= En-tête de page coloré (écrans de liste) =================
+   Demande explicite du client ("et si le fond de la partie pv de soutenance
+   exporter etc... était coloré"), étendue aux 14 écrans de liste qui
+   partagent ce même bandeau titre + boutons d'action. Réutilise TEL QUEL le
+   dégradé bleu foncé déjà en place sur .doc-hero (fiche document) plutôt
+   qu'une nouvelle teinte, pour rester cohérent avec l'unique autre bandeau
+   coloré de l'application. Appliqué en ajoutant simplement cette classe sur
+   le <div class="d-flex flex-wrap justify-content-between..."> déjà présent
+   sur chaque écran — titre, sous-titre et boutons à l'intérieur n'ont pas
+   besoin d'être touchés, les règles ci-dessous les recolorent par
+   descendance (y compris sur les 4 écrans à la structure plus simple, sans
+   sous-titre ni wrapper de boutons : Utilisateurs, Sauvegardes,
+   Notifications, Rôles). */
+.page-header-hero {
+    background: linear-gradient(120deg, #1c4e80 0%, #123a5e 100%);
+    border-radius: .9rem;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 10px 26px rgba(18, 58, 94, 0.22);
+}
+.page-header-hero h1 { color: #fff; }
+.page-header-hero p.text-muted { color: rgba(255, 255, 255, .78) !important; }
+
+/* Boutons secondaires (Corbeille/Exporter/Importer/Retour...) : le gris
+   habituel de .btn-outline-secondary serait quasi invisible sur un fond
+   bleu foncé — passage à un contour blanc translucide. */
+.page-header-hero .btn-outline-secondary {
+    color: #fff;
+    border-color: rgba(255, 255, 255, .55);
+}
+.page-header-hero .btn-outline-secondary:hover {
+    background: rgba(255, 255, 255, .15);
+    color: #fff;
+    border-color: #fff;
+}
+
+/* Bouton d'action principal (Nouveau PV/Ajouter/Créer...) : même bleu que
+   le dégradé de fond, donc invisible tel quel — inversé en pastille blanche
+   pour qu'il ressorte comme le vrai point d'action de l'en-tête. */
+.page-header-hero .btn-primary {
+    background: #fff;
+    border-color: #fff;
+    color: #1c4e80;
+}
+.page-header-hero .btn-primary:hover {
+    background: rgba(255, 255, 255, .88);
+    border-color: rgba(255, 255, 255, .88);
+    color: #123a5e;
+}
+
 /* ================= Badges ================= */
 .badge.bg-livre { background-color: #e8f0f8; color: #1c4e80; }
 .badge.bg-memoire { background-color: #fdf1de; color: #a5690f; }
 [data-bs-theme="dark"] .badge.bg-livre { background-color: #1c3348; color: #8fc1e8; }
 [data-bs-theme="dark"] .badge.bg-memoire { background-color: #3a2c14; color: #f5b660; }
+
+/* ================= PV de soutenance : repère de couleur par niveau =================
+   Demande explicite du client ("il n'y a pas de point de repère, tout se
+   ressemble") — voir App\Models\PvSoutenance::niveauBadgeClasse() et les
+   onglets de resources/views/gestion/pv-soutenances/index.blade.php. Même
+   style "pastille douce" que .badge.bg-livre/.bg-memoire ci-dessus plutôt
+   que les badges Bootstrap pleins (text-bg-*), pour rester cohérent et
+   moins criard sur une colonne entière de la liste. */
+.badge.bg-niveau-bts { background-color: #e3f6f4; color: #0f766e; }
+.badge.bg-niveau-dts { background-color: #f1ecfb; color: #6d28d9; }
+.badge.bg-niveau-licence { background-color: #e8f0f8; color: #1c4e80; }
+.badge.bg-niveau-master { background-color: #fdf1de; color: #a5690f; }
+.badge.bg-niveau-doctorat { background-color: #fbe9ec; color: #9f1239; }
+[data-bs-theme="dark"] .badge.bg-niveau-bts { background-color: #123634; color: #5eead4; }
+[data-bs-theme="dark"] .badge.bg-niveau-dts { background-color: #2c2150; color: #c4b5fd; }
+[data-bs-theme="dark"] .badge.bg-niveau-licence { background-color: #1c3348; color: #8fc1e8; }
+[data-bs-theme="dark"] .badge.bg-niveau-master { background-color: #3a2c14; color: #f5b660; }
+[data-bs-theme="dark"] .badge.bg-niveau-doctorat { background-color: #3a1620; color: #fb7185; }
+
+/* ================= En-têtes de carte : fond coloré par section =================
+   Deuxième itération, sur retour du client ("je préfère que tu ajoutes des
+   couleurs sur le fond des titres") — remplace la petite puce d'icône
+   (.card-header-icon, jugée trop discrète) par un bandeau d'en-tête
+   entièrement teinté + texte en gras, dans la même palette douce que les
+   badges ci-dessus. Un bandeau de couleur clairement visible par carte,
+   plutôt qu'une icône isolée qu'on remarque à peine. */
+.card-header.header-primary { background: rgba(var(--bs-primary-rgb), .12); color: var(--bs-primary); font-weight: 700; }
+.card-header.header-accent { background: rgba(242, 160, 61, .18); color: var(--ingridd-accent-dark); font-weight: 700; }
+.card-header.header-success { background: rgba(25, 135, 84, .12); color: #198754; font-weight: 700; }
+.card-header.header-info { background: rgba(15, 118, 110, .12); color: #0f766e; font-weight: 700; }
+[data-bs-theme="dark"] .card-header.header-primary { background: rgba(var(--bs-primary-rgb), .22); color: #7fb4e8; }
+[data-bs-theme="dark"] .card-header.header-accent { background: rgba(245, 182, 96, .2); color: #f5b660; }
+[data-bs-theme="dark"] .card-header.header-success { background: rgba(25, 135, 84, .25); color: #6ee7b7; }
+[data-bs-theme="dark"] .card-header.header-info { background: rgba(94, 234, 212, .18); color: #5eead4; }
+
+/* ================= En-têtes de colonne triables (tableaux de listes) =================
+   Demande explicite du client ("ajoute la fonctionnalité de trier sur les
+   tableaux"), étendue à tous les tableaux de listes — voir
+   App\Http\Controllers\Concerns\ListeTriable et
+   resources/views/components/th-triable.blade.php. Flèche discrète au repos
+   (bi-arrow-down-up, grisée), colonne active en bleu/gras avec une flèche
+   pleine indiquant le sens courant. */
+.th-triable {
+    display: inline-flex; align-items: center; gap: .35rem;
+    color: inherit; text-decoration: none; white-space: nowrap;
+}
+.th-triable:hover { color: var(--bs-primary); }
+.th-triable-fleche { font-size: .7rem; color: #adb5bd; }
+.th-triable.actif { color: var(--bs-primary); font-weight: 700; }
+.th-triable.actif .th-triable-fleche { color: var(--bs-primary); }
+[data-bs-theme="dark"] .th-triable-fleche { color: #5b6672; }
+
+/* ================= Onglets de niveau (PV de soutenance) : pastilles pleines =================
+   Deuxième itération, sur retour du client ("l'affichage des niveaux n'est
+   pas joli, change la couleur du texte et le fond, et rendre gras") —
+   remplace le simple lien Bootstrap + petit point coloré par un vrai
+   bouton-pastille : fond teinté + texte en gras de la même couleur que le
+   badge niveau correspondant (voir .badge.bg-niveau-* ci-dessus, mêmes
+   teintes réutilisées), et un remplissage plein (fond saturé + texte blanc)
+   pour l'onglet actif — repère immédiat de l'onglet actuellement affiché. */
+.nav-tabs-niveaux { border-bottom: none; gap: .5rem; flex-wrap: wrap; }
+.nav-tabs-niveaux .nav-item { margin-bottom: 0; }
+.nav-tabs-niveaux .nav-link {
+    border: none; border-radius: 999px; font-weight: 700; padding: .5rem 1.1rem;
+    letter-spacing: .01em; transition: transform .15s ease, box-shadow .15s ease;
+}
+.nav-tabs-niveaux .nav-link:hover { transform: translateY(-1px); }
+.nav-tabs-niveaux .nav-link.active { color: #fff; box-shadow: 0 4px 10px rgba(18, 58, 94, 0.18); }
+
+.nav-tabs-niveaux .niveau-tab-tous { color: var(--bs-primary); background: rgba(var(--bs-primary-rgb), .1); }
+.nav-tabs-niveaux .niveau-tab-tous.active { background: var(--bs-primary); }
+
+.nav-tabs-niveaux .niveau-tab-bts { color: #0f766e; background: #e3f6f4; }
+.nav-tabs-niveaux .niveau-tab-bts.active { background: #0f766e; }
+
+.nav-tabs-niveaux .niveau-tab-dts { color: #6d28d9; background: #f1ecfb; }
+.nav-tabs-niveaux .niveau-tab-dts.active { background: #6d28d9; }
+
+.nav-tabs-niveaux .niveau-tab-licence { color: #1c4e80; background: #e8f0f8; }
+.nav-tabs-niveaux .niveau-tab-licence.active { background: #1c4e80; }
+
+.nav-tabs-niveaux .niveau-tab-master { color: #a5690f; background: #fdf1de; }
+.nav-tabs-niveaux .niveau-tab-master.active { background: #a5690f; }
+
+.nav-tabs-niveaux .niveau-tab-doctorat { color: #9f1239; background: #fbe9ec; }
+.nav-tabs-niveaux .niveau-tab-doctorat.active { background: #9f1239; }
+
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-tous { color: #7fb4e8; background: rgba(var(--bs-primary-rgb), .18); }
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-bts { color: #5eead4; background: #123634; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-dts { color: #c4b5fd; background: #2c2150; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-licence { color: #8fc1e8; background: #1c3348; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-master { color: #f5b660; background: #3a2c14; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-doctorat { color: #fb7185; background: #3a1620; }
+
+/* Onglet "Tous" actif en mode sombre : fond fixe (pas var(--bs-primary), trop
+   clair en sombre) pour garder un bon contraste avec le texte blanc — les
+   autres onglets actifs réutilisent déjà des teintes saturées suffisamment
+   sombres (#0f766e, #6d28d9, #1c4e80, #a5690f, #9f1239) dans les deux thèmes. */
+[data-bs-theme="dark"] .nav-tabs-niveaux .niveau-tab-tous.active { background: #16416b; color: #fff; }
+
+/* ================= PV de réunion : repère de couleur par année académique =================
+   Demande explicite du client ("fait de même pour les PV de réunion pour
+   les couleurs et pour le tableau fait par année académique"), même
+   principe visuel que les onglets/badges par niveau ci-dessus — voir
+   App\Models\AnneeAcademique::paletteIndex() et
+   resources/views/gestion/reunions/index.blade.php. Contrairement à
+   Niveau/Cycle (une poignée de valeurs fixes, une couleur dédiée à chacune),
+   l'année académique est un référentiel OUVERT (une nouvelle valeur créée
+   chaque année) : pas de couleur "dédiée" possible par valeur, donc une
+   palette de 6 teintes (les 5 du bloc niveau ci-dessus + un vert) attribuée
+   PAR ROTATION (palette-0 à palette-5) plutôt que par valeur. Classes
+   génériques .bg-palette-N/.palette-tab-N (pas .bg-annee-N) : rien n'empêche
+   de les réutiliser ailleurs pour un autre référentiel ouvert. Le repère
+   "Tous" réutilise directement .niveau-tab-tous ci-dessus (déjà générique). */
+.badge.bg-palette-0 { background-color: #e8f0f8; color: #1c4e80; }
+.badge.bg-palette-1 { background-color: #e3f6f4; color: #0f766e; }
+.badge.bg-palette-2 { background-color: #f1ecfb; color: #6d28d9; }
+.badge.bg-palette-3 { background-color: #fdf1de; color: #a5690f; }
+.badge.bg-palette-4 { background-color: #fbe9ec; color: #9f1239; }
+.badge.bg-palette-5 { background-color: #e6f4ea; color: #198754; }
+[data-bs-theme="dark"] .badge.bg-palette-0 { background-color: #1c3348; color: #8fc1e8; }
+[data-bs-theme="dark"] .badge.bg-palette-1 { background-color: #123634; color: #5eead4; }
+[data-bs-theme="dark"] .badge.bg-palette-2 { background-color: #2c2150; color: #c4b5fd; }
+[data-bs-theme="dark"] .badge.bg-palette-3 { background-color: #3a2c14; color: #f5b660; }
+[data-bs-theme="dark"] .badge.bg-palette-4 { background-color: #3a1620; color: #fb7185; }
+[data-bs-theme="dark"] .badge.bg-palette-5 { background-color: #163b28; color: #6ee7b7; }
+
+.nav-tabs-niveaux .palette-tab-0 { color: #1c4e80; background: #e8f0f8; }
+.nav-tabs-niveaux .palette-tab-0.active { background: #1c4e80; }
+
+.nav-tabs-niveaux .palette-tab-1 { color: #0f766e; background: #e3f6f4; }
+.nav-tabs-niveaux .palette-tab-1.active { background: #0f766e; }
+
+.nav-tabs-niveaux .palette-tab-2 { color: #6d28d9; background: #f1ecfb; }
+.nav-tabs-niveaux .palette-tab-2.active { background: #6d28d9; }
+
+.nav-tabs-niveaux .palette-tab-3 { color: #a5690f; background: #fdf1de; }
+.nav-tabs-niveaux .palette-tab-3.active { background: #a5690f; }
+
+.nav-tabs-niveaux .palette-tab-4 { color: #9f1239; background: #fbe9ec; }
+.nav-tabs-niveaux .palette-tab-4.active { background: #9f1239; }
+
+.nav-tabs-niveaux .palette-tab-5 { color: #198754; background: #e6f4ea; }
+.nav-tabs-niveaux .palette-tab-5.active { background: #198754; }
+
+[data-bs-theme="dark"] .nav-tabs-niveaux .palette-tab-0 { color: #8fc1e8; background: #1c3348; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .palette-tab-1 { color: #5eead4; background: #123634; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .palette-tab-2 { color: #c4b5fd; background: #2c2150; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .palette-tab-3 { color: #f5b660; background: #3a2c14; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .palette-tab-4 { color: #fb7185; background: #3a1620; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .palette-tab-5 { color: #6ee7b7; background: #163b28; }
+
+/* ================= Recettes : onglets des 3 volets (écrans différents) =================
+   Design aligné sur .nav-tabs-niveaux ci-dessus (pastilles arrondies, gras)
+   — demande explicite du client ("fais de meme pour et recette et depense,
+   etc.."), voir resources/views/gestion/recettes/_onglets.blade.php.
+   Contrairement aux onglets Dépenses/Contrats (référentiel OUVERT, couleur
+   PAR ROTATION, voir .palette-tab-N ci-dessus) et aux onglets Niveau/Cycle
+   (filtrage au sein d'UN MÊME écran), ces 3 onglets sont un nombre FIXE
+   menant chacun à un ÉCRAN DIFFÉRENT (Scolarité / Retrait diplôme / Frais de
+   soutenance) : chacun reçoit donc sa PROPRE couleur dédiée, comme les
+   onglets Niveau/Cycle, mais sous des classes dédiées — jamais les classes
+   .niveau-tab-* elles-mêmes, sémantiquement réservées au niveau/cycle. */
+.nav-tabs-niveaux .recette-tab-scolarite { color: #1c4e80; background: #e8f0f8; }
+.nav-tabs-niveaux .recette-tab-scolarite.active { background: #1c4e80; }
+
+.nav-tabs-niveaux .recette-tab-retrait-diplome { color: #0f766e; background: #e3f6f4; }
+.nav-tabs-niveaux .recette-tab-retrait-diplome.active { background: #0f766e; }
+
+.nav-tabs-niveaux .recette-tab-frais-soutenance { color: #a5690f; background: #fdf1de; }
+.nav-tabs-niveaux .recette-tab-frais-soutenance.active { background: #a5690f; }
+
+[data-bs-theme="dark"] .nav-tabs-niveaux .recette-tab-scolarite { color: #8fc1e8; background: #1c3348; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .recette-tab-retrait-diplome { color: #5eead4; background: #123634; }
+[data-bs-theme="dark"] .nav-tabs-niveaux .recette-tab-frais-soutenance { color: #f5b660; background: #3a2c14; }
+
+/* ================= Onglets en défilement horizontal (PV de réunion) =================
+   Sur retour du client ("si les années académiques s'accumulent ça sera
+   vilain à voir sans scroller") : contrairement aux onglets Niveau/Cycle
+   ci-dessus (nombre fixe, 4 à 6 au total, jamais plus), les onglets par
+   année académique s'accumulent d'année en année (un nouveau référentiel
+   créé chaque année, voir App\Models\AnneeAcademique::paletteIndex()) — au
+   lieu de les laisser passer à la ligne (moche dès qu'il y en a beaucoup)
+   ou de les limiter arbitrairement, ils restent sur UNE SEULE ligne qui
+   défile horizontalement, comme des onglets de navigateur. Modificateur
+   .nav-tabs-scroll appliqué EN PLUS de .nav-tabs-niveaux (jamais à sa
+   place) : seul resources/views/gestion/reunions/index.blade.php l'utilise,
+   les écrans Niveau/Cycle (nombre borné, jamais de débordement en pratique)
+   gardent leur comportement actuel inchangé. */
+.nav-tabs-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: .45rem;
+    scrollbar-width: thin;
+}
+.nav-tabs-scroll .nav-item { flex-shrink: 0; }
+.nav-tabs-scroll::-webkit-scrollbar { height: 6px; }
+.nav-tabs-scroll::-webkit-scrollbar-track { background: transparent; }
+.nav-tabs-scroll::-webkit-scrollbar-thumb { background: rgba(18, 58, 94, 0.18); border-radius: 999px; }
+.nav-tabs-scroll::-webkit-scrollbar-thumb:hover { background: rgba(18, 58, 94, 0.3); }
+[data-bs-theme="dark"] .nav-tabs-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); }
+[data-bs-theme="dark"] .nav-tabs-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
 
 /* ================= Auth (pages sans app-shell) ================= */
 .auth-card { max-width: 460px; margin: 3rem auto; animation: fadeInUp .5s ease both; }
@@ -477,3 +738,23 @@ table.table tbody tr { transition: background-color .12s ease; }
 }
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background: rgba(var(--bs-primary-rgb), 0.07); }
+
+/* Calendrier "Mon compte" du tableau de bord — voir DashboardController::calendrier(). */
+.ingridd-calendrier th { font-weight: 600; color: var(--bs-secondary-color, #6c757d); font-size: .78rem; }
+.ingridd-calendrier td { padding: .55rem .25rem; }
+.ingridd-calendrier-aujourdhui {
+    background: rgba(var(--bs-primary-rgb), 0.14);
+    color: var(--bs-primary);
+    font-weight: 700;
+    border-radius: .4rem;
+}
+/* Week-ends teintés — demande explicite du client ("rends ça plus vivante
+   [...] avec les couleurs"), repère visuel rapide dans la grille. La case
+   "aujourd'hui" garde TOUJOURS la priorité sur la teinte week-end (voir
+   :not() ci-dessous) : un samedi/dimanche "aujourd'hui" reste signalé par la
+   couleur primaire, jamais noyé dans la teinte week-end plus discrète. */
+.ingridd-calendrier th.ingridd-calendrier-weekend { color: var(--ingridd-accent-dark); }
+.ingridd-calendrier td.ingridd-calendrier-weekend:not(.ingridd-calendrier-aujourdhui) {
+    background: rgba(242, 160, 61, 0.09);
+    border-radius: .4rem;
+}

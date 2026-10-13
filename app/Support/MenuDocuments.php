@@ -9,21 +9,35 @@ use Illuminate\Support\Collection;
 /**
  * Construit la structure du sous-menu "Types de documents" du layout (voir
  * resources/views/layouts/gestion.blade.php, sous "Documents") à partir du
- * référentiel App\Models\TypeDocument/SousTypeDocument, avec deux
- * ajustements PUREMENT VISUELS demandés par le client — aucun des deux ne
- * touche aux données ni à `type_document_id` d'un document existant :
+ * référentiel App\Models\TypeDocument/SousTypeDocument, avec des
+ * ajustements PUREMENT VISUELS demandés par le client — aucun ne touche aux
+ * données ni à `type_document_id` d'un document existant :
+ *
+ * - EXCLUSION des types à écran dédié (App\Support\TypesEcranDedie) : un
+ *   type comme "PV de soutenance" ou "Relevés de notes" a désormais son
+ *   propre écran de gestion (voir TypesEcranDedie::CODES), et
+ *   App\Http\Controllers\DocumentController::requeteListe() exclut ces
+ *   mêmes types de la liste générale "Tous les documents" — la page que ce
+ *   menu-ci est censé filtrer. Sans cette exclusion, cliquer sur une entrée
+ *   de ce menu pour un tel type menait tout droit à une liste TOUJOURS VIDE
+ *   (lien mort) : constaté par le client sur un écran "Finances" ("n'est-il
+ *   pas temps d'enlever ce qui est en bas... du menu"), corrigé ici plutôt
+ *   qu'en masquant juste l'effet côté vue. Les types sans écran dédié
+ *   (Contrats, Courrier, Organigramme...) restent inchangés, dans "Autres
+ *   types" ci-dessous.
  *
  * - GROUPES : certains types, bien que distincts dans le référentiel (champs
- *   dédiés différents — voir TypeDocumentSeeder, "Soutenance" a ses propres
- *   champs, "Délibération" volontairement aucun), sont perçus par le client
- *   comme une seule famille dans le menu : pour l'instant "PV" (Délibération
- *   + PV de soutenance). Regroupés ici sous une entrée dépliable commune,
- *   chaque sous-entrée reste un lien filtré sur SON type réel.
+ *   dédiés différents — voir TypeDocumentSeeder), peuvent être perçus par le
+ *   client comme une seule famille dans le menu, et être regroupés ici sous
+ *   une entrée dépliable commune (chaque sous-entrée reste un lien filtré
+ *   sur SON type réel). Vide pour l'instant : l'unique groupe utilisé
+ *   jusqu'ici ("PV" = Délibération + PV de soutenance) a rejoint
+ *   TypesEcranDedie::CODES et tombe donc désormais sous l'exclusion
+ *   ci-dessus, avant même d'atteindre ce regroupement.
  *
  * - "Autres types" : sur demande explicite du client ("met les dans
- *   autres"), tout type actif SANS sous-type et hors des groupes ci-dessus
- *   (la majorité des ~27 types du référentiel : Contrats, Courrier,
- *   Organigramme...) est rangé dans ce seau plutôt que d'avoir sa propre
+ *   autres"), tout type actif SANS sous-type, sans écran dédié et hors des
+ *   groupes ci-dessus est rangé dans ce seau plutôt que d'avoir sa propre
  *   entrée de premier niveau (menu interminable) — en attendant que le
  *   client recense les vraies sous-catégories type par type plutôt que
  *   d'en inventer de fausses ici.
@@ -36,9 +50,7 @@ use Illuminate\Support\Collection;
 class MenuDocuments
 {
     /** @var array<string, array{libelle: string, codes: array<int, string>}> */
-    private const GROUPES = [
-        'pv' => ['libelle' => 'PV', 'codes' => ['PV_DELIBERATION', 'PV_SOUTENANCE']],
-    ];
+    private const GROUPES = [];
 
     /**
      * @return Collection<int, array{
@@ -54,6 +66,9 @@ class MenuDocuments
     {
         $types = TypeDocument::query()
             ->where('actif', true)
+            // Voir le docblock de la classe : un type à écran dédié n'a
+            // plus sa place ici, ses liens seraient systématiquement morts.
+            ->whereNotIn('code', TypesEcranDedie::CODES)
             ->orderBy('ordre')
             ->with(['sousTypes' => fn ($q) => $q->where('actif', true)])
             ->get();

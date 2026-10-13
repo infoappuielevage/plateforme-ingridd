@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ListeTriable;
+use App\Http\Controllers\Concerns\VerifieVerrouillage;
 use App\Models\AnneeAcademique;
 use App\Models\ChampSupplementaire;
 use App\Models\Document;
@@ -12,6 +14,7 @@ use App\Models\SessionReleve;
 use App\Models\SessionReleveFichier;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
+use App\Support\FichiersExcel;
 use App\Support\ResourceAccess;
 use App\Support\Semestres;
 use App\Support\TypesFichiers;
@@ -21,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Gestion des Relevés de notes — MIROIR volontaire de
@@ -36,6 +40,8 @@ use Illuminate\Validation\Rule;
  */
 class SessionReleveController extends Controller
 {
+    use ListeTriable, VerifieVerrouillage;
+
     public function __construct()
     {
         abort_unless(ResourceAccess::can('sessions_releves', 'view'), 403);
@@ -45,22 +51,110 @@ class SessionReleveController extends Controller
     {
         $corbeille = $request->boolean('corbeille');
 
-        $requete = SessionReleve::query()
-            ->with(['anneeAcademique', 'filiere', 'fichiers'])
-            ->when($corbeille, fn ($q) => $q->onlyTrashed())
-            ->when($request->filled('annee_academique_id'), fn ($q) => $q->where('annee_academique_id', $request->integer('annee_academique_id')))
-            ->when($request->filled('cycle'), fn ($q) => $q->where('cycle', $request->string('cycle')))
-            ->when($request->filled('filiere_id'), fn ($q) => $q->where('filiere_id', $request->integer('filiere_id')))
-            ->latest('created_at');
+        $sessions = $this->requeteListe($request, $corbeille)->paginate(8)->withQueryString();
+
+        // [clé, direction] résolus SANS requête (voir ListeTriable) pour que
+        // la vue marque la colonne active dans l'en-tête — même principe que
+        // SessionDeliberationController::index().
+        [$triActuel, $directionActuelle] = $this->resoudreTri($request, $this->colonnesTriables(), 'created_at', 'desc');
 
         return view('gestion.sessions-releves.index', [
-            'sessions' => $requete->paginate(20)->withQueryString(),
+            'sessions' => $sessions,
             'corbeille' => $corbeille,
             'corbeillePeutEtreVidee' => $corbeille && SessionReleve::onlyTrashed()->exists(),
             'anneesAcademiques' => AnneeAcademique::query()->orderByDesc('libelle')->get(),
             'filieres' => Filiere::query()->orderBy('ordre')->get(),
-            'cycles' => SessionReleve::CYCLES,
+            'onglets' => ['tous' => 'Tous'] + SessionReleve::CYCLES,
+            'cycleActif' => $this->ongletCycleValide($request),
+            'triActuel' => $triActuel,
+            'directionActuelle' => $directionActuelle,
         ]);
+    }
+
+    /**
+     * Export Excel (.xlsx) de la liste — demandé par le client, respecte
+     * EXACTEMENT les mêmes filtres que l'écran (voir requeteListe()
+     * ci-dessous, partagée avec index()), simplement sans pagination.
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $corbeille = $request->boolean('corbeille');
+        $sessions = $this->requeteListe($request, $corbeille)->get();
+
+        $lignes = $sessions->map(fn (SessionReleve $session) => [
+            $session->anneeAcademique?->libelle,
+            $session->sessionLibelle(),
+            $session->cycleLibelle(),
+            $session->filiere?->libelle,
+            $session->description,
+            $session->created_at?->format('d/m/Y H:i'),
+        ]);
+
+        return FichiersExcel::exporter(
+            'sessions-releves-'.now()->format('Y-m-d').'.xlsx',
+            ['Année académique', 'Session', 'Cycle', 'Filière', 'Description', 'Créée le'],
+            $lignes
+        );
+    }
+
+    /** @return \Illuminate\Database\Eloquent\Builder<SessionReleve> */
+    protected function requeteListe(Request $request, bool $corbeille): \Illuminate\Database\Eloquent\Builder
+    {
+        $cycle = $this->ongletCycleValide($request);
+
+        $query = SessionReleve::query()
+            ->with(['anneeAcademique', 'filiere', 'fichiers'])
+            ->when($corbeille, fn ($q) => $q->onlyTrashed())
+            ->when($request->filled('annee_academique_id'), fn ($q) => $q->where('annee_academique_id', $request->integer('annee_academique_id')))
+            // Onglet "cycle" — voir SessionDeliberationController::requeteListe()
+            // (identique, miroir volontaire de ce contrôleur).
+            ->when($cycle !== 'tous', fn ($q) => $q->where('cycle', $cycle))
+            ->when($request->filled('filiere_id'), fn ($q) => $q->where('filiere_id', $request->integer('filiere_id')));
+
+        $this->appliquerTri($query, $this->colonnesTriables(), $this->resoudreTri($request, $this->colonnesTriables(), 'created_at', 'desc'));
+
+        return $query;
+    }
+
+    /**
+     * Colonnes triables de la liste (voir App\Http\Controllers\Concerns\ListeTriable)
+     * — même structure que SessionDeliberationController::colonnesTriables(),
+     * ce contrôleur étant un miroir volontaire de celui-ci (voir le docblock
+     * de la classe).
+     *
+     * @return array<string, string|\Closure>
+     */
+    protected function colonnesTriables(): array
+    {
+        return [
+            'annee_academique' => fn ($query, string $direction) => $query->orderBy(
+                AnneeAcademique::select('libelle')->whereColumn('annees_academiques.id', 'sessions_releves.annee_academique_id'),
+                $direction
+            ),
+            'session' => 'session',
+            'cycle' => 'cycle',
+            'filiere' => fn ($query, string $direction) => $query->orderBy(
+                Filiere::select('libelle')->whereColumn('filieres.id', 'sessions_releves.filiere_id'),
+                $direction
+            ),
+            'fichiers_deposes' => function ($query, string $direction) {
+                $query->withCount(['fichiers as fichiers_deposes_count' => fn ($q) => $q->whereNotNull('document_id')])
+                    ->orderBy('fichiers_deposes_count', $direction);
+            },
+            'created_at' => 'created_at',
+        ];
+    }
+
+    /**
+     * Onglet "cycle" valide pour la liste — voir
+     * SessionDeliberationController::ongletCycleValide() (identique, miroir
+     * volontaire de ce contrôleur).
+     */
+    protected function ongletCycleValide(Request $request): string
+    {
+        $valeur = $request->string('cycle')->toString();
+
+        return array_key_exists($valeur, SessionReleve::CYCLES) ? $valeur : 'tous';
     }
 
     public function create(): View
@@ -187,10 +281,89 @@ class SessionReleveController extends Controller
         return redirect()->route('gestion.sessions-releves.index', ['corbeille' => 1])->with('succes', 'Session de relevé supprimée définitivement.');
     }
 
+    /**
+     * Mise à la corbeille groupée : sélection multiple de sessions (cases à
+     * cocher, voir resources/views/gestion/sessions-releves/index.blade.php)
+     * mises à la corbeille en une seule action — MÊME PRINCIPE que
+     * SessionDeliberationController::mettreCorbeilleGroupee(), sur demande
+     * explicite du client ("permettre de faire des sélections pour des
+     * actions sur les tableaux différents").
+     */
+    public function mettreCorbeilleGroupee(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*' => ['integer'],
+        ]);
+
+        $sessions = SessionReleve::query()->whereIn('id', $donnees['sessions'])->get();
+
+        foreach ($sessions as $session) {
+            $session->delete();
+        }
+
+        return back()->with('succes', $sessions->count().' session(s) de relevé mise(s) à la corbeille.');
+    }
+
+    /** Restauration groupée — pendant de mettreCorbeilleGroupee() pour la corbeille. */
+    public function restaurerGroupe(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*' => ['integer'],
+        ]);
+
+        $sessions = SessionReleve::onlyTrashed()->whereIn('id', $donnees['sessions'])->get();
+
+        foreach ($sessions as $session) {
+            $session->restore();
+        }
+
+        return back()->with('succes', $sessions->count().' session(s) de relevé restaurée(s).');
+    }
+
+    /**
+     * Suppression définitive groupée — MÊME RAISONNEMENT que forceDestroy()
+     * ci-dessus : chaque document encore attaché à une case est mis à la
+     * corbeille AVANT de supprimer la session elle-même.
+     */
+    public function forceDestroyGroupe(Request $request): RedirectResponse
+    {
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+
+        $donnees = $request->validate([
+            'sessions' => ['required', 'array', 'min:1'],
+            'sessions.*' => ['integer'],
+        ]);
+
+        $sessions = SessionReleve::onlyTrashed()->with('fichiers')->whereIn('id', $donnees['sessions'])->get();
+
+        foreach ($sessions as $session) {
+            foreach ($session->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $session->forceDelete();
+        }
+
+        return back()->with('succes', $sessions->count().' session(s) de relevé supprimée(s) définitivement.');
+    }
+
     public function uploaderFichier(Request $request, SessionReleve $sessionReleve, SessionReleveFichier $fichier): RedirectResponse
     {
         abort_unless(ResourceAccess::can('sessions_releves', 'edit'), 403);
         abort_if($fichier->session_releve_id !== $sessionReleve->id, 404);
+
+        $reponse = $this->refuserSiVerrouille($fichier->document);
+        if ($reponse) {
+            return $reponse;
+        }
 
         $typeReleve = $this->typeDocumentReleve();
         abort_if(! $typeReleve, 500, "Le type de document \"RELEVE_NOTES\" est introuvable — contactez l'administrateur.");
@@ -240,6 +413,11 @@ class SessionReleveController extends Controller
     {
         abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
         abort_if($fichier->session_releve_id !== $sessionReleve->id, 404);
+
+        $reponse = $this->refuserSiVerrouille($fichier->document);
+        if ($reponse) {
+            return $reponse;
+        }
 
         if ($fichier->document_id) {
             Document::query()->find($fichier->document_id)?->delete();

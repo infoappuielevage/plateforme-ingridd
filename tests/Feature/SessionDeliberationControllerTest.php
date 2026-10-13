@@ -16,6 +16,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\CaptureExportExcel;
 use Tests\TestCase;
 
 /**
@@ -28,7 +29,25 @@ use Tests\TestCase;
  */
 class SessionDeliberationControllerTest extends TestCase
 {
+    use CaptureExportExcel;
     use RefreshDatabase;
+
+    /** export() respecte les mêmes filtres que index() (même requeteListe() partagée, voir le docblock d'export()). */
+    public function test_lexport_respecte_les_filtres_de_la_liste(): void
+    {
+        $admin = User::factory()->admin()->create();
+        SessionDeliberation::factory()->create(['cycle' => SessionDeliberation::CYCLE_LICENCE, 'description' => 'Session licence']);
+        SessionDeliberation::factory()->create(['cycle' => SessionDeliberation::CYCLE_MASTER, 'description' => 'Session master']);
+
+        $reponse = $this->actingAs($admin)
+            ->get(route('gestion.sessions-deliberation.export', ['cycle' => SessionDeliberation::CYCLE_MASTER]))
+            ->assertOk();
+
+        $lignes = array_values($this->lignesExportees($reponse->baseResponse));
+
+        $this->assertCount(1, $lignes);
+        $this->assertSame('Session master', $lignes[0][4]);
+    }
 
     public function test_un_admin_accede_a_la_liste(): void
     {
@@ -319,5 +338,109 @@ class SessionDeliberationControllerTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame('Nouvelle description', $session->fresh()->description);
+    }
+
+    /**
+     * Actions groupées (sélection multiple, voir
+     * resources/views/gestion/sessions-deliberation/index.blade.php) — MÊME
+     * PRINCIPE que tests/Feature/EtudiantControllerTest.php pour
+     * mettreCorbeilleGroupee()/restaurerGroupe()/forceDestroyGroupe(), sur
+     * demande explicite du client ("permettre de faire des sélections pour
+     * des actions sur les tableaux différents").
+     */
+    public function test_mise_a_la_corbeille_groupee(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $sessionA = SessionDeliberation::factory()->create();
+        $sessionB = SessionDeliberation::factory()->create();
+        $sessionHorsSelection = SessionDeliberation::factory()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.sessions-deliberation.corbeille-groupee'), [
+                'sessions' => [$sessionA->id, $sessionB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNotNull($sessionA->fresh()->deleted_at);
+        $this->assertNotNull($sessionB->fresh()->deleted_at);
+        $this->assertNull($sessionHorsSelection->fresh()->deleted_at);
+    }
+
+    public function test_restauration_groupee(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $sessionA = SessionDeliberation::factory()->create();
+        $sessionB = SessionDeliberation::factory()->create();
+        $sessionA->delete();
+        $sessionB->delete();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.sessions-deliberation.corbeille.restaurer-groupe'), [
+                'sessions' => [$sessionA->id, $sessionB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($sessionA->fresh()->deleted_at);
+        $this->assertNull($sessionB->fresh()->deleted_at);
+    }
+
+    /** Même raisonnement que forceDestroy() individuel : les documents encore attachés sont mis à la corbeille avant de supprimer les sessions. */
+    public function test_suppression_definitive_groupee_met_les_documents_encore_attaches_a_la_corbeille(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $sessionA = SessionDeliberation::factory()->create();
+        $sessionB = SessionDeliberation::factory()->create();
+        $documentA = Document::factory()->create();
+        $documentB = Document::factory()->create();
+        SessionDeliberationFichier::factory()->create(['session_deliberation_id' => $sessionA->id, 'document_id' => $documentA->id]);
+        SessionDeliberationFichier::factory()->create(['session_deliberation_id' => $sessionB->id, 'document_id' => $documentB->id]);
+        $sessionA->delete();
+        $sessionB->delete();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.sessions-deliberation.corbeille.force-destroy-groupe'), [
+                'sessions' => [$sessionA->id, $sessionB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('sessions_deliberation', ['id' => $sessionA->id]);
+        $this->assertDatabaseMissing('sessions_deliberation', ['id' => $sessionB->id]);
+        $this->assertNotNull(Document::onlyTrashed()->find($documentA->id));
+        $this->assertNotNull(Document::onlyTrashed()->find($documentB->id));
+    }
+
+    /** Une sélection vide (ou absente) doit être refusée côté serveur, pas seulement empêchée par le JS du bouton. */
+    public function test_une_selection_vide_est_refusee(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.sessions-deliberation.corbeille-groupee'), ['sessions' => []])
+            ->assertRedirect()
+            ->assertSessionHasErrors('sessions');
+    }
+
+    /** Sans le droit "delete" sur "sessions_deliberation", les trois actions groupées restent interdites — même droit que les actions individuelles. */
+    public function test_les_actions_groupees_exigent_le_droit_de_suppression(): void
+    {
+        Role::query()->create([
+            'slug' => 'sessions_deliberation_lecture_seule',
+            'name' => 'Lecture seule PV délibération',
+            'permissions' => ['sessions_deliberation' => ['view' => true, 'delete' => false]],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'sessions_deliberation_lecture_seule']);
+        $session = SessionDeliberation::factory()->create();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.sessions-deliberation.corbeille-groupee'), ['sessions' => [$session->id]])
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.sessions-deliberation.corbeille.restaurer-groupe'), ['sessions' => [$session->id]])
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.sessions-deliberation.corbeille.force-destroy-groupe'), ['sessions' => [$session->id]])
+            ->assertForbidden();
     }
 }

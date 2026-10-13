@@ -27,8 +27,8 @@ Schedule::command('model:prune', ['--model' => [\App\Models\AuditLog::class]])->
 | Voir App\Console\Commands\CreerSauvegarde et App\Filament\Pages\Sauvegardes
 | (Administration > Sauvegardes, pour créer/télécharger/supprimer
 | manuellement). Le nombre de sauvegardes conservées ET la fréquence
-| (quotidienne/hebdomadaire/mensuelle) sont réglables dans Administration >
-| Paramètres — voir Parametre::doitSauvegarderAujourdhui() : la planification
+| (quotidienne/hebdomadaire/mensuelle/annuelle) sont réglables dans
+| Administration > Paramètres — voir Parametre::doitSauvegarderAujourdhui() : la planification
 | Laravel elle-même reste quotidienne (elle ne peut pas changer de fréquence
 | dynamiquement sans redéployer), c'est ce ->when() qui décide si le jour
 | convient à la fréquence choisie.
@@ -42,3 +42,14 @@ Schedule::command('model:prune', ['--model' => [\App\Models\AuditLog::class]])->
 Schedule::command('ingridd:sauvegarde')
     ->daily()
     ->when(fn () => \App\Models\Parametre::actuel()->doitSauvegarderAujourdhui());
+
+/*
+|--------------------------------------------------------------------------
+| Alertes sauvegarde / espace disque
+|--------------------------------------------------------------------------
+|
+| Voir App\Console\Commands\VerifierAlertes — pousse en notification (cloche,
+| voir layouts/gestion.blade.php) les mêmes alertes déjà visibles sur le
+| tableau de bord de l'administrateur, pour ne pas dépendre d'y penser.
+*/
+Schedule::command('ingridd:verifier-alertes')->daily();

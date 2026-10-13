@@ -31,14 +31,30 @@ class ResourceAccess
         'sessions_releves' => 'Relevés de notes',
         'pv_soutenances' => 'PV de soutenance',
         'reunions' => 'PV de réunion',
+        'etudiants' => 'Dossier étudiant',
+        'etats_financiers' => 'États financiers',
+        'recettes' => 'Gestion des recettes',
+        'depenses' => 'Gestion des dépenses',
+        'listes_finances_etudiants' => 'Liste des étudiants (finances)',
+        'contrats' => 'Gestion des contrats',
         'types_documents' => 'Types de documents',
         'filieres' => 'Filières',
         'niveaux' => 'Niveaux',
         'annees_academiques' => 'Années académiques',
         'champs_supplementaires' => 'Champs supplémentaires',
+        'types_pieces_etudiants' => 'Types de pièces (dossier étudiant)',
+        'types_depenses' => 'Catégories de dépenses',
+        'types_contrats' => 'Catégories de contrats',
         // Historique : toujours en lecture seule pour tout le monde, même
         // "admin" — seul le droit "Voir" a un effet ici (voir AuditLogResource).
         'audit_logs' => 'Historique (audit)',
+        // Verrouillage : un seul geste possible (verrouiller/déverrouiller un
+        // document), donc seul le droit "Modifier" a un effet ici — même
+        // principe que "audit_logs" ci-dessus (voir RoleController::valider()
+        // et gestion/roles/form.blade.php). Un rôle "admin" a de toute façon
+        // toujours ce droit (voir can() ci-dessous), qu'il soit coché ou non
+        // pour lui dans la matrice.
+        'verrouillage_documents' => 'Verrouillage des documents',
     ];
 
     public const ACTIONS = [
@@ -49,23 +65,39 @@ class ResourceAccess
     ];
 
     /**
-     * Une icône par ressource, uniquement pour l'affichage (écran Rôles &
-     * permissions). Reprend l'icône déjà utilisée dans le menu de
-     * navigation par la Resource correspondante, pour que le même
-     * pictogramme désigne toujours la même chose partout dans l'application.
+     * Une icône Bootstrap Icons par ressource, uniquement pour l'affichage
+     * (écran Rôles & permissions, voir gestion/roles/form.blade.php). Reprend
+     * EXACTEMENT l'icône déjà utilisée ailleurs dans l'application pour la
+     * même ressource (menu de navigation dans resources/views/layouts/
+     * gestion.blade.php, ou écran Paramètres pour "audit_logs"/
+     * "verrouillage_documents"), pour que le même pictogramme désigne
+     * toujours la même chose partout. Ancienne version de cette constante :
+     * des classes "heroicon-o-*" héritées de la version Filament du projet,
+     * jamais utilisées par les vues Blade actuelles (confirmé : aucune
+     * référence à ICONES ailleurs dans le code avant ce changement).
      */
     public const ICONES = [
-        'documents' => 'heroicon-o-document-text',
-        'sessions_deliberation' => 'heroicon-o-clipboard-document-check',
-        'sessions_releves' => 'heroicon-o-document-chart-bar',
-        'pv_soutenances' => 'heroicon-o-academic-cap',
-        'reunions' => 'heroicon-o-user-group',
-        'types_documents' => 'heroicon-o-tag',
-        'filieres' => 'heroicon-o-academic-cap',
-        'niveaux' => 'heroicon-o-bars-arrow-up',
-        'annees_academiques' => 'heroicon-o-calendar-days',
-        'champs_supplementaires' => 'heroicon-o-document-plus',
-        'audit_logs' => 'heroicon-o-clock',
+        'documents' => 'bi-file-earmark-text-fill',
+        'sessions_deliberation' => 'bi-clipboard2-check-fill',
+        'sessions_releves' => 'bi-journal-text',
+        'pv_soutenances' => 'bi-mortarboard-fill',
+        'reunions' => 'bi-people-fill',
+        'etudiants' => 'bi-person-vcard-fill',
+        'etats_financiers' => 'bi-bar-chart-line-fill',
+        'recettes' => 'bi-cash-coin',
+        'depenses' => 'bi-credit-card-2-front-fill',
+        'listes_finances_etudiants' => 'bi-people-fill',
+        'contrats' => 'bi-vector-pen',
+        'types_documents' => 'bi-tags-fill',
+        'filieres' => 'bi-diagram-3-fill',
+        'niveaux' => 'bi-bar-chart-steps',
+        'annees_academiques' => 'bi-calendar-range-fill',
+        'champs_supplementaires' => 'bi-file-earmark-plus-fill',
+        'types_pieces_etudiants' => 'bi-folder2-open',
+        'types_depenses' => 'bi-credit-card-2-front-fill',
+        'types_contrats' => 'bi-vector-pen',
+        'audit_logs' => 'bi-clock-history',
+        'verrouillage_documents' => 'bi-lock',
     ];
 
     /** Cache mémoire (durée d'une requête) pour éviter une requête SQL répétée par ressource/action. */

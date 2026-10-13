@@ -3,7 +3,7 @@
 @section('title', 'Sauvegardes')
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0">Sauvegardes</h1>
     <form method="POST" action="{{ route('gestion.sauvegardes.store') }}" onsubmit="return confirm('Créer une nouvelle sauvegarde maintenant ? Cette opération peut prendre quelques instants.');">
         @csrf
@@ -20,6 +20,15 @@
         @endforeach
     </div>
 @endif
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    Chaque sauvegarde contient la base de données ET tous les documents déposés sur la plateforme, dans une seule archive .zip.
+    <strong>Téléchargez-la régulièrement et conservez-la ailleurs</strong> (votre ordinateur, une clé USB, un espace de stockage externe...) :
+    en cas de problème sur l'hébergement, seule une copie gardée hors de ce serveur permet de ne pas perdre vos documents.
+    La fréquence de création automatique se règle dans
+    <a href="{{ route('gestion.parametres.index') }}">Administration &gt; Paramètres</a>.
+</div>
 
 <div class="card shadow-sm">
     <div class="table-responsive">
@@ -67,5 +76,11 @@
             </tbody>
         </table>
     </div>
+
+    @if ($sauvegardes->hasPages())
+        <div class="card-footer bg-transparent">
+            {{ $sauvegardes->links('pagination::bootstrap-5') }}
+        </div>
+    @endif
 </div>
 @endsection

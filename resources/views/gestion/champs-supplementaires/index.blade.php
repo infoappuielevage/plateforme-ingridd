@@ -3,7 +3,7 @@
 @section('title', 'Champs supplémentaires')
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">Champs supplémentaires</h1>
         <p class="text-muted small mb-0">
@@ -43,12 +43,12 @@
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th>Libellé</th>
-                    <th>Ordre</th>
-                    <th>Actif</th>
-                    <th>PV de délibération</th>
-                    <th>Relevé de notes</th>
-                    <th>PV de soutenance</th>
+                    <x-th-triable cle="libelle" libelle="Libellé" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.champs-supplementaires.index" />
+                    <x-th-triable cle="ordre" libelle="Ordre" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.champs-supplementaires.index" />
+                    <x-th-triable cle="actif" libelle="Actif" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.champs-supplementaires.index" />
+                    <x-th-triable cle="pour_pv" libelle="PV de délibération" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.champs-supplementaires.index" />
+                    <x-th-triable cle="pour_releve" libelle="Relevé de notes" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.champs-supplementaires.index" />
+                    <x-th-triable cle="pour_soutenance" libelle="PV de soutenance" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.champs-supplementaires.index" />
                     <th>Cycles</th>
                     <th class="text-end">Actions</th>
                 </tr>

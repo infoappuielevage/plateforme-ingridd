@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // pas spécifique au domaine des soutenances).
         $middleware->web(append: [
             \App\Http\Middleware\CorrigerEncodageRequete::class,
+            // Doit tourner sur CHAQUE requête (pas seulement les routes
+            // gestion.* protégées par 'auth') : voir le docblock de
+            // RejeterUtilisateurBloque pour pourquoi.
+            \App\Http\Middleware\RejeterUtilisateurBloque::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

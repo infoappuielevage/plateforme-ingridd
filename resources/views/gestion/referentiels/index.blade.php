@@ -3,7 +3,7 @@
 @section('title', $definition['pluriel'])
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">{{ $definition['pluriel'] }}</h1>
         <p class="text-muted small mb-0">
@@ -19,7 +19,13 @@
             <a href="{{ route('gestion.referentiels.index', ['referentiel' => $referentiel, 'corbeille' => 1]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-trash3"></i> Corbeille
             </a>
+            <a href="{{ route('gestion.referentiels.export', array_merge(['referentiel' => $referentiel], request()->query())) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-excel"></i> Exporter
+            </a>
             @if (\App\Support\ResourceAccess::can($definition['cle'], 'create'))
+                <a href="{{ route('gestion.referentiels.import.formulaire', ['referentiel' => $referentiel]) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-file-earmark-arrow-up"></i> Importer
+                </a>
                 <a href="{{ route('gestion.referentiels.create', ['referentiel' => $referentiel]) }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg"></i> Ajouter
                 </a>
@@ -51,26 +57,72 @@
     </form>
 </div>
 
+@php $peutSupprimerReferentiel = \App\Support\ResourceAccess::can($definition['cle'], 'delete'); @endphp
+
+@if ($peutSupprimerReferentiel)
+    {{-- Formulaire "porteur" de la sélection groupée — même principe que
+         resources/views/gestion/documents/index.blade.php : les cases à
+         cocher et les boutons de la barre ci-dessous s'y rattachent via
+         l'attribut HTML `form="..."` plutôt que d'être imbriqués dedans. --}}
+    <form id="formSelectionReferentiel" method="POST" class="d-none">
+        @csrf
+    </form>
+
+    <div id="barreActionsGroupeesReferentiel" class="alert alert-secondary d-none align-items-center justify-content-between gap-2 mb-3">
+        <span><strong id="compteurSelectionReferentiel">0</strong> élément(s) sélectionné(s)</span>
+        <div class="d-flex gap-2">
+            @if (! $corbeille)
+                <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille-groupee', ['referentiel' => $referentiel]) }}"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Mettre les éléments sélectionnés à la corbeille ?');">
+                    <i class="bi bi-trash3"></i> Mettre à la corbeille
+                </button>
+            @else
+                <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille.restaurer-groupe', ['referentiel' => $referentiel]) }}"
+                        class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                </button>
+                <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille.force-destroy-groupe', ['referentiel' => $referentiel]) }}"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Supprimer définitivement les éléments sélectionnés ? Cette action est irréversible.');">
+                    <i class="bi bi-x-circle"></i> Supprimer définitivement
+                </button>
+            @endif
+        </div>
+    </div>
+@endif
+
 <div class="card shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    @if ($definition['a_code'])
-                        <th>Code</th>
+                    @if ($peutSupprimerReferentiel)
+                        <th style="width: 2rem;">
+                            <input type="checkbox" class="form-check-input" id="selectionnerTousReferentiel" title="Tout sélectionner">
+                        </th>
                     @endif
-                    <th>Libellé</th>
                     @if ($definition['a_code'])
-                        <th>Ordre</th>
+                        <x-th-triable cle="code" libelle="Code" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.referentiels.index" :parametres="['referentiel' => $referentiel]" />
                     @endif
-                    <th>Actif</th>
-                    <th>Documents</th>
+                    <x-th-triable cle="libelle" libelle="Libellé" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.referentiels.index" :parametres="['referentiel' => $referentiel]" />
+                    @if ($definition['a_code'])
+                        <x-th-triable cle="ordre" libelle="Ordre" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.referentiels.index" :parametres="['referentiel' => $referentiel]" />
+                    @endif
+                    <x-th-triable cle="actif" libelle="Actif" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.referentiels.index" :parametres="['referentiel' => $referentiel]" />
+                    <x-th-triable cle="documents_count" libelle="Documents" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.referentiels.index" :parametres="['referentiel' => $referentiel]" />
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse ($items as $item)
                     <tr>
+                        @if ($peutSupprimerReferentiel)
+                            <td>
+                                <input type="checkbox" class="form-check-input case-selection-referentiel"
+                                       name="ids[]" value="{{ $item->id }}" form="formSelectionReferentiel">
+                            </td>
+                        @endif
                         @if ($definition['a_code'])
                             <td><code>{{ $item->code }}</code></td>
                         @endif
@@ -127,7 +179,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6">
+                        <td colspan="{{ $peutSupprimerReferentiel ? 7 : 6 }}">
                             <div class="empty-state text-center py-5">
                                 <i class="bi bi-inbox fs-1 text-muted"></i>
                                 <p class="text-muted mb-0">
@@ -148,3 +200,46 @@
     @endif
 </div>
 @endsection
+
+@if ($peutSupprimerReferentiel)
+    @section('scripts')
+        <script>
+            (function () {
+                const casesLigne = document.querySelectorAll('.case-selection-referentiel');
+                if (! casesLigne.length) return;
+
+                const caseTout = document.getElementById('selectionnerTousReferentiel');
+                const barre = document.getElementById('barreActionsGroupeesReferentiel');
+                const compteur = document.getElementById('compteurSelectionReferentiel');
+
+                function casesCochees() {
+                    return Array.from(casesLigne).filter(function (c) { return c.checked; });
+                }
+
+                function actualiserBarre() {
+                    const nombre = casesCochees().length;
+                    barre.classList.toggle('d-none', nombre === 0);
+                    barre.classList.toggle('d-flex', nombre > 0);
+                    compteur.textContent = nombre;
+                    if (caseTout) {
+                        caseTout.checked = nombre > 0 && nombre === casesLigne.length;
+                        caseTout.indeterminate = nombre > 0 && nombre < casesLigne.length;
+                    }
+                }
+
+                casesLigne.forEach(function (c) {
+                    c.addEventListener('change', actualiserBarre);
+                });
+
+                if (caseTout) {
+                    caseTout.addEventListener('change', function () {
+                        casesLigne.forEach(function (c) { c.checked = caseTout.checked; });
+                        actualiserBarre();
+                    });
+                }
+
+                actualiserBarre();
+            })();
+        </script>
+    @endsection
+@endif

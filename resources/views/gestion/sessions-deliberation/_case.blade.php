@@ -19,23 +19,26 @@
         <a href="{{ route('documents.telecharger', $fichier->document_id) }}" class="btn btn-sm btn-outline-secondary" title="Télécharger">
             <i class="bi bi-download"></i>
         </a>
-        @if ($peutModifier)
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#remplacer{{ $fichier->id }}">
-                Remplacer
-            </button>
-        @endif
-        @if ($peutSupprimer)
-            <form method="POST" action="{{ route('gestion.sessions-deliberation.fichiers.destroy', ['sessionDeliberation' => $session->id, 'fichier' => $fichier->id]) }}"
-                  onsubmit="return confirm('Retirer ce fichier ? La case restera disponible pour un nouveau dépôt.');">
-                @csrf
-                @method('DELETE')
-                <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer">
-                    <i class="bi bi-trash3"></i>
+        @include('gestion.partials._lien_historique', ['type' => \App\Models\Document::class, 'id' => $fichier->document_id])
+        @unless ($fichier->document->estVerrouille())
+            @if ($peutModifier)
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#remplacer{{ $fichier->id }}">
+                    Remplacer
                 </button>
-            </form>
-        @endif
+            @endif
+            @if ($peutSupprimer)
+                <form method="POST" action="{{ route('gestion.sessions-deliberation.fichiers.destroy', ['sessionDeliberation' => $session->id, 'fichier' => $fichier->id]) }}"
+                      onsubmit="return confirm('Retirer ce fichier ? La case restera disponible pour un nouveau dépôt.');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Retirer">
+                        <i class="bi bi-trash3"></i>
+                    </button>
+                </form>
+            @endif
+        @endunless
     </div>
-    @if ($peutModifier)
+    @if ($peutModifier && ! $fichier->document->estVerrouille())
         <div class="collapse mt-2" id="remplacer{{ $fichier->id }}">
             <form method="POST" action="{{ route('gestion.sessions-deliberation.fichiers.store', ['sessionDeliberation' => $session->id, 'fichier' => $fichier->id]) }}" enctype="multipart/form-data" class="d-flex gap-2">
                 @csrf

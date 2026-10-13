@@ -25,6 +25,11 @@
 # Exports générés à la demande (CSV de l'historique avant purge, etc.) :
 # peuvent contenir des données personnelles, jamais à suivre dans Git.
 /storage/app/private/exports
+# Fichiers de travail temporaires d'App\Console\Commands\CreerSauvegarde
+# (archive .zip en cours de constitution, dump mysqldump) — supprimés après
+# chaque sauvegarde, jamais à suivre dans Git (données complètes en clair
+# pendant la fabrication).
+/storage/app/sauvegardes-tmp
 # Export/dump de base de données local, potentiellement avec des données
 # réelles d'étudiants (noms, numéros de PV...) — jamais à suivre dans Git.
 /test.sql

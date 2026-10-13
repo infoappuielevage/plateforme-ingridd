@@ -48,17 +48,17 @@ class TypeDocumentSeederTest extends TestCase
     /**
      * Menu allégé (demande explicite du client, "trop d'éléments dont on a
      * plus besoin pour le moment") : sur une installation neuve, seuls les
-     * quatre écrans dédiés déjà construits (dont PV_REUNION, arrivé depuis)
-     * et "Autre" (filet de sécurité) sont actifs — tout le reste est créé
-     * désactivé, réactivable
-     * individuellement depuis Administration > Référentiels > Types de
-     * documents sans toucher au code (voir CODES_ACTIFS_PAR_DEFAUT).
+     * cinq écrans dédiés déjà construits (dont PV_REUNION et DOSSIER_ETUDIANT,
+     * arrivés depuis) et "Autre" (filet de sécurité) sont actifs — tout le
+     * reste est créé désactivé, réactivable individuellement depuis
+     * Administration > Référentiels > Types de documents sans toucher au
+     * code (voir CODES_ACTIFS_PAR_DEFAUT).
      */
     public function test_seuls_les_ecrans_dedies_et_autre_sont_actifs_sur_une_base_neuve(): void
     {
         (new TypeDocumentSeeder)->run();
 
-        foreach (['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'PV_REUNION', 'AUTRE'] as $code) {
+        foreach (['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'PV_REUNION', 'DOSSIER_ETUDIANT', 'AUTRE'] as $code) {
             $this->assertDatabaseHas('type_documents', ['code' => $code, 'actif' => true]);
         }
 

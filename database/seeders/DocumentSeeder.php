@@ -4,6 +4,9 @@ namespace Database\Seeders;
 
 use App\Models\AnneeAcademique;
 use App\Models\Document;
+use App\Models\Etudiant;
+use App\Models\EtudiantFichier;
+use App\Models\EtudiantInscription;
 use App\Models\Filiere;
 use App\Models\Niveau;
 use App\Models\PvSoutenance;
@@ -16,8 +19,10 @@ use App\Models\SessionReleve;
 use App\Models\SessionReleveFichier;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
+use App\Models\TypePieceEtudiant;
 use App\Models\User;
 use App\Support\Semestres;
+use App\Support\TypesEcranDedie;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -102,6 +107,7 @@ class DocumentSeeder extends Seeder
         $typeAttestation = TypeDocument::query()->where('code', 'ATTESTATION')->first();
         $typePvSoutenance = TypeDocument::query()->where('code', 'PV_SOUTENANCE')->first();
         $typeReunion = TypeDocument::query()->where('code', 'PV_REUNION')->first();
+        $typeEtudiant = TypeDocument::query()->where('code', 'DOSSIER_ETUDIANT')->first();
         // Liste mise à jour après la refonte complète du référentiel des
         // types (voir TypeDocumentSeeder) : couvre tous les types
         // administratifs génériques restants (sans champs dédiés, sans
@@ -142,6 +148,7 @@ class DocumentSeeder extends Seeder
         $sessionsDeliberationCreees = [];
         $sessionsReleveCreees = [];
         $reunionsCreees = [];
+        $etudiantsCrees = [];
 
         // --------------------------------------------------------------
         // 1) Un document "Liste des étudiants" par filière/niveau (année
@@ -168,12 +175,20 @@ class DocumentSeeder extends Seeder
 
         // --------------------------------------------------------------
         // 1bis) Sessions de délibération : une par filière et par cycle
-        // (Licence/Master — pas Doctorat, pour ne pas générer un nombre
-        // excessif de documents), pour la session la plus récente. Voir
+        // (Licence/Master sur toutes les filières — Doctorat seulement sur
+        // la première, pour ne pas générer un nombre excessif de
+        // documents), pour la session la plus récente. Voir
         // App\Models\SessionDeliberation : contrairement à un simple
         // Document, UNE session couvre tout un cycle (ex. "Licence" = L1 à
         // L3), pas un seul niveau — d'où un enregistrement par filière x
         // cycle plutôt que par filière x niveau comme avant la refonte.
+        //
+        // Le Doctorat est ajouté ici (en plus de Licence/Master) pour que
+        // l'onglet "Doctorat" de la liste — voir resources/views/gestion/sessions-deliberation/index.blade.php
+        // et App\Models\SessionDeliberation::cycleBadgeClasse() — ait lui
+        // aussi un exemple à afficher une fois les démos relancées (demande
+        // explicite du client : "readapte a present les demos pour qu'on
+        // voit a quoi sa resemble").
         //
         // Les "cases" sont recréées ici à l'identique de
         // SessionDeliberationController::creerCasesVides() (deux notes
@@ -183,8 +198,12 @@ class DocumentSeeder extends Seeder
         // qu'une session déjà entièrement complète.
         // --------------------------------------------------------------
         if ($typePvDeliberation) {
-            foreach ($filieres as $filiere) {
-                foreach ([SessionDeliberation::CYCLE_LICENCE, SessionDeliberation::CYCLE_MASTER] as $cycle) {
+            foreach ($filieres as $filiereIndex => $filiere) {
+                $cyclesPourCetteFiliere = $filiereIndex === 0
+                    ? [SessionDeliberation::CYCLE_LICENCE, SessionDeliberation::CYCLE_MASTER, SessionDeliberation::CYCLE_DOCTORAT]
+                    : [SessionDeliberation::CYCLE_LICENCE, SessionDeliberation::CYCLE_MASTER];
+
+                foreach ($cyclesPourCetteFiliere as $cycle) {
                     $session = SessionDeliberation::create([
                         'annee_academique_id' => $anneeRecente->id,
                         'session' => SessionDeliberation::SESSION_PREMIERE,
@@ -214,7 +233,12 @@ class DocumentSeeder extends Seeder
                         ]);
                     }
 
-                    $sousType = $sousTypeParLibelle('PV_DELIBERATION', $cycle === SessionDeliberation::CYCLE_MASTER ? 'Master' : 'Licence');
+                    // Pas de sous-type pour le Doctorat (ni de "niveau" pour
+                    // ses cases numérotées, qui sont des années de thèse, pas
+                    // des semestres) — même règle que
+                    // SessionDeliberationController::sousTypePour()/niveauPour().
+                    $estDoctorat = $cycle === SessionDeliberation::CYCLE_DOCTORAT;
+                    $sousType = $estDoctorat ? null : $sousTypeParLibelle('PV_DELIBERATION', $cycle === SessionDeliberation::CYCLE_MASTER ? 'Master' : 'Licence');
 
                     foreach (array_slice($cases, 0, 3) as $case) {
                         $document = $this->creerDocument(
@@ -224,7 +248,7 @@ class DocumentSeeder extends Seeder
                                 'type_document_id' => $typePvDeliberation->id,
                                 'sous_type_document_id' => $sousType,
                                 'filiere_id' => $filiere->id,
-                                'niveau_id' => $case->role === $roleNumerote ? $niveauPourNumeroSemestre($case->numero)?->id : null,
+                                'niveau_id' => ($case->role === $roleNumerote && ! $estDoctorat) ? $niveauPourNumeroSemestre($case->numero)?->id : null,
                                 'annee_academique_id' => $anneeRecente->id,
                                 'semestre' => $case->role === SessionDeliberationFichier::ROLE_SEMESTRE ? $case->numero : null,
                             ],
@@ -239,15 +263,22 @@ class DocumentSeeder extends Seeder
         // --------------------------------------------------------------
         // 2) Sessions de relevés de notes : sur deux filières seulement
         // (pas toutes, pour ne pas générer un nombre excessif de
-        // documents), une session par cycle (Licence/Master) pour la
-        // session la plus récente — voir App\Models\SessionReleve, miroir
-        // de SessionDeliberation ci-dessus mais sans les deux cases "Note
+        // documents), une session par cycle Licence/Master pour la session
+        // la plus récente — voir App\Models\SessionReleve, miroir de
+        // SessionDeliberation ci-dessus mais sans les deux cases "Note
         // d'information" (voir SessionReleveFichier). Environ la moitié des
-        // cases numérotées est déjà remplie d'un document.
+        // cases numérotées est déjà remplie d'un document. Le Doctorat est
+        // ajouté en plus sur la première de ces deux filières, pour la même
+        // raison que pour les PV de délibération ci-dessus (onglet "Doctorat"
+        // de la liste à montrer, demande explicite du client).
         // --------------------------------------------------------------
         if ($typeReleveNotes) {
-            foreach ($filieres->take(2) as $filiere) {
-                foreach ([SessionReleve::CYCLE_LICENCE, SessionReleve::CYCLE_MASTER] as $cycle) {
+            foreach ($filieres->take(2) as $filiereIndex => $filiere) {
+                $cyclesPourCetteFiliere = $filiereIndex === 0
+                    ? [SessionReleve::CYCLE_LICENCE, SessionReleve::CYCLE_MASTER, SessionReleve::CYCLE_DOCTORAT]
+                    : [SessionReleve::CYCLE_LICENCE, SessionReleve::CYCLE_MASTER];
+
+                foreach ($cyclesPourCetteFiliere as $cycle) {
                     $session = SessionReleve::create([
                         'annee_academique_id' => $anneeRecente->id,
                         'session' => SessionReleve::SESSION_PREMIERE,
@@ -268,7 +299,12 @@ class DocumentSeeder extends Seeder
                         ]);
                     }
 
-                    $sousType = $sousTypeParLibelle('RELEVE_NOTES', $cycle === SessionReleve::CYCLE_MASTER ? 'Master' : 'Licence');
+                    // Pas de sous-type ni de "niveau" pour le Doctorat — voir
+                    // le commentaire équivalent sur les PV de délibération
+                    // ci-dessus (même règle que SessionReleveController::
+                    // sousTypePour()/niveauPour()).
+                    $estDoctorat = $cycle === SessionReleve::CYCLE_DOCTORAT;
+                    $sousType = $estDoctorat ? null : $sousTypeParLibelle('RELEVE_NOTES', $cycle === SessionReleve::CYCLE_MASTER ? 'Master' : 'Licence');
 
                     foreach ($cases as $index => $case) {
                         if ($index % 2 !== 0) {
@@ -282,7 +318,7 @@ class DocumentSeeder extends Seeder
                                 'type_document_id' => $typeReleveNotes->id,
                                 'sous_type_document_id' => $sousType,
                                 'filiere_id' => $filiere->id,
-                                'niveau_id' => $niveauPourNumeroSemestre($case->numero)?->id,
+                                'niveau_id' => $estDoctorat ? null : $niveauPourNumeroSemestre($case->numero)?->id,
                                 'annee_academique_id' => $anneeRecente->id,
                                 'semestre' => $case->role === SessionReleveFichier::ROLE_SEMESTRE ? $case->numero : null,
                             ],
@@ -353,8 +389,19 @@ class DocumentSeeder extends Seeder
         // PvSoutenanceController::creerCasesVides()). Numéros d'ordre de
         // registre et de PV générés séquentiellement (uniques, comme
         // l'exige PvSoutenanceController::valider()).
+        //
+        // `niveau` est réparti tour à tour sur les 5 valeurs de
+        // PvSoutenance::NIVEAUX (plutôt que figé sur Master comme avant) —
+        // demande explicite du client ("readapte a present les demos pour
+        // qu'on voit a quoi sa resemble") : sans cette variété, les onglets
+        // BTS/DTS/Licence/Doctorat de la liste (voir
+        // resources/views/gestion/pv-soutenances/index.blade.php et
+        // App\Models\PvSoutenance::niveauBadgeClasse()) resteraient tous
+        // vides en démonstration, et les couleurs par niveau ne se
+        // verraient jamais nulle part.
         // --------------------------------------------------------------
         if ($typePvSoutenance) {
+            $niveauxPvSoutenance = array_keys(PvSoutenance::NIVEAUX);
             $themesMemoire = [
                 'Digitalisation des processus administratifs dans les PME burkinabè',
                 'Impact du changement climatique sur l\'agriculture en zone sahélienne',
@@ -375,7 +422,7 @@ class DocumentSeeder extends Seeder
                 $estRetire = $index % 3 !== 0;
 
                 $pvSoutenance = PvSoutenance::create([
-                    'niveau' => PvSoutenance::NIVEAU_MASTER,
+                    'niveau' => $niveauxPvSoutenance[$index % count($niveauxPvSoutenance)],
                     'date_soutenance' => now()->subMonths(random_int(1, 8))->toDateString(),
                     'numero_ordre_registre' => sprintf('REG-%04d', $index + 1),
                     'nom' => $nom,
@@ -456,9 +503,21 @@ class DocumentSeeder extends Seeder
         // chaque réunion) et environ une réunion sur deux a en plus une
         // pièce jointe (liste en nombre libre, voir le docblock du
         // contrôleur).
+        //
+        // `annee_academique_id` est réparti tour à tour sur les 4 années les
+        // plus récentes (plutôt que figé sur $anneeRecente) — demande
+        // explicite du client ("fait de même pour les PV de réunion pour les
+        // couleurs et pour le tableau fait par année académique") : sans
+        // cette variété, les onglets par année de la liste (voir
+        // resources/views/gestion/reunions/index.blade.php et
+        // App\Models\AnneeAcademique::paletteIndex()) resteraient tous vides
+        // sauf un en démonstration. Limité aux 4 plus récentes (pas les 7
+        // de AnneeAcademiqueSeeder) : des réunions d'archives remontant à
+        // 2020 ne seraient pas réalistes pour ce type de document.
         // --------------------------------------------------------------
         if ($typeReunion) {
             $sousTypesReunion = $sousTypesParType->get('PV_REUNION', collect());
+            $anneesReunion = $anneesAcademiques->take(4)->values();
             $objetsReunion = [
                 'Point hebdomadaire sur l\'avancement des inscriptions',
                 'Préparation de la rentrée académique',
@@ -472,9 +531,12 @@ class DocumentSeeder extends Seeder
                 $sousType = $sousTypesReunion->isNotEmpty()
                     ? $sousTypesReunion[$index % $sousTypesReunion->count()]
                     : null;
+                $anneeReunion = $anneesReunion->isNotEmpty()
+                    ? $anneesReunion[$index % $anneesReunion->count()]
+                    : $anneeRecente;
 
                 $reunion = Reunion::create([
-                    'annee_academique_id' => $anneeRecente->id,
+                    'annee_academique_id' => $anneeReunion->id,
                     'date_reunion' => now()->subWeeks($index + 1)->toDateString(),
                     'sous_type_document_id' => $sousType?->id,
                     'description' => $objet,
@@ -496,7 +558,7 @@ class DocumentSeeder extends Seeder
                     [
                         'type_document_id' => $typeReunion->id,
                         'sous_type_document_id' => $sousType?->id,
-                        'annee_academique_id' => $anneeRecente->id,
+                        'annee_academique_id' => $anneeReunion->id,
                     ],
                 );
                 $caseRapport->update(['document_id' => $documentRapport->id]);
@@ -511,7 +573,7 @@ class DocumentSeeder extends Seeder
                         [
                             'type_document_id' => $typeReunion->id,
                             'sous_type_document_id' => $sousType?->id,
-                            'annee_academique_id' => $anneeRecente->id,
+                            'annee_academique_id' => $anneeReunion->id,
                         ],
                     );
                     ReunionFichier::create([
@@ -522,6 +584,135 @@ class DocumentSeeder extends Seeder
                         'document_id' => $documentPieceJointe->id,
                     ]);
                     $documentsCrees[] = $documentPieceJointe;
+                }
+            }
+        }
+
+        // --------------------------------------------------------------
+        // 3quinquies) Dossier étudiant : un enregistrement par étudiant —
+        // voir App\Models\Etudiant (remplace, comme les quatre volets
+        // précédents, l'ancien Document "à plat" pour ce type). Depuis la
+        // refonte "liste fixe" (voir App\Models\TypePieceEtudiant), CHAQUE
+        // étudiant reçoit ici les mêmes cases que créerait
+        // EtudiantController::creerCasesIdentite()/creerCasesInscription() —
+        // seules certaines sont effectivement remplies, pour illustrer à la
+        // fois des cases pleines et des cases encore vides dans l'écran.
+        // Deux des cinq étudiants ci-dessous ont DEUX inscriptions (année
+        // précédente + année récente), pour illustrer concrètement la
+        // progression d'un niveau à l'autre d'une année sur l'autre (demande
+        // explicite du client) ; les trois autres n'ont que l'inscription de
+        // l'année récente.
+        // --------------------------------------------------------------
+        if ($typeEtudiant) {
+            $anneePrecedente = $anneesAcademiques->get(1) ?? $anneeRecente;
+            $niveauParCode = fn (string $code) => $niveaux->firstWhere('code', $code);
+
+            $typesPieceParCode = TypePieceEtudiant::query()->where('actif', true)->get()->keyBy('code');
+            $typesPiecesIdentite = $typesPieceParCode->where('recurrente', false)->sortBy('ordre');
+            $typesPiecesInscription = $typesPieceParCode->where('recurrente', true)->sortBy('ordre');
+
+            $profilsEtudiants = [
+                ['matricule' => 'ING-2024-001', 'nom' => 'Ouedraogo', 'prenoms' => 'Aïcha', 'niveauPrecedent' => 'L1', 'niveauRecent' => 'L2'],
+                ['matricule' => 'ING-2025-014', 'nom' => 'Sawadogo', 'prenoms' => 'Ibrahim', 'niveauPrecedent' => null, 'niveauRecent' => 'L1'],
+                ['matricule' => 'ING-2023-032', 'nom' => 'Kaboré', 'prenoms' => 'Fatimata', 'niveauPrecedent' => 'L3', 'niveauRecent' => 'M1'],
+                ['matricule' => 'ING-2022-007', 'nom' => 'Traoré', 'prenoms' => 'Boukari', 'niveauPrecedent' => null, 'niveauRecent' => 'M2'],
+                ['matricule' => 'ING-2025-021', 'nom' => 'Zongo', 'prenoms' => 'Awa', 'niveauPrecedent' => null, 'niveauRecent' => 'L1'],
+            ];
+
+            foreach ($profilsEtudiants as $index => $profil) {
+                $filiere = $filieres[$index % $filieres->count()];
+
+                $etudiant = Etudiant::create([
+                    'matricule' => $profil['matricule'],
+                    'nom' => $profil['nom'],
+                    'prenoms' => $profil['prenoms'],
+                    'created_by' => $admin->id,
+                ]);
+                $etudiantsCrees[] = $etudiant;
+
+                $inscriptionPrecedente = null;
+                if ($profil['niveauPrecedent'] && ($niveauPrecedent = $niveauParCode($profil['niveauPrecedent'])) && $anneePrecedente->id !== $anneeRecente->id) {
+                    $inscriptionPrecedente = $etudiant->inscriptions()->create([
+                        'annee_academique_id' => $anneePrecedente->id,
+                        'niveau_id' => $niveauPrecedent->id,
+                        'filiere_id' => $filiere->id,
+                    ]);
+                }
+
+                $niveauRecent = $niveauParCode($profil['niveauRecent']);
+                $inscriptionRecente = null;
+                if ($niveauRecent) {
+                    $inscriptionRecente = $etudiant->inscriptions()->create([
+                        'annee_academique_id' => $anneeRecente->id,
+                        'niveau_id' => $niveauRecent->id,
+                        'filiere_id' => $filiere->id,
+                    ]);
+                }
+
+                // Cases d'identité (une par type non récurrent) — l'acte de
+                // naissance est toujours rempli, la CNIB seulement pour un
+                // étudiant sur deux, le reste (diplôme antérieur, photo)
+                // volontairement laissé vide pour montrer une case non
+                // remplie dans l'écran.
+                $numero = 0;
+                foreach ($typesPiecesIdentite as $type) {
+                    $document = null;
+
+                    if ($type->code === 'ACTE_NAISSANCE' || ($type->code === 'CNIB' && $index % 2 === 0)) {
+                        $document = $this->creerDocument(
+                            $admin,
+                            $profil['prenoms'].' '.$profil['nom'].' - '.$type->libelle,
+                            [
+                                'type_document_id' => $typeEtudiant->id,
+                                'filiere_id' => $filiere->id,
+                                'niveau_id' => $niveauRecent?->id,
+                                'annee_academique_id' => $anneeRecente->id,
+                            ],
+                        );
+                        $documentsCrees[] = $document;
+                    }
+
+                    EtudiantFichier::create([
+                        'etudiant_id' => $etudiant->id,
+                        'numero' => ++$numero,
+                        'type_piece_etudiant_id' => $type->id,
+                        'document_id' => $document?->id,
+                    ]);
+                }
+
+                // Cases par année académique (une par type récurrent, par
+                // inscription) — seul le relevé de notes de l'inscription la
+                // plus récente est rempli, le reste reste vide.
+                foreach ([$inscriptionPrecedente, $inscriptionRecente] as $inscription) {
+                    if (! $inscription) {
+                        continue;
+                    }
+
+                    foreach ($typesPiecesInscription as $type) {
+                        $document = null;
+
+                        if ($type->code === 'RELEVES_NOTES' && $inscription->is($inscriptionRecente)) {
+                            $document = $this->creerDocument(
+                                $admin,
+                                $profil['prenoms'].' '.$profil['nom'].' - '.$type->libelle.' ('.$inscription->anneeAcademique?->libelle.')',
+                                [
+                                    'type_document_id' => $typeEtudiant->id,
+                                    'filiere_id' => $inscription->filiere_id,
+                                    'niveau_id' => $inscription->niveau_id,
+                                    'annee_academique_id' => $inscription->annee_academique_id,
+                                ],
+                            );
+                            $documentsCrees[] = $document;
+                        }
+
+                        EtudiantFichier::create([
+                            'etudiant_id' => $etudiant->id,
+                            'numero' => ++$numero,
+                            'type_piece_etudiant_id' => $type->id,
+                            'etudiant_inscription_id' => $inscription->id,
+                            'document_id' => $document?->id,
+                        ]);
+                    }
                 }
             }
         }
@@ -638,12 +829,28 @@ class DocumentSeeder extends Seeder
         // SessionDeliberationController::index()/SessionReleveController::index(),
         // filtre `corbeille`) aient du contenu dès le départ.
         // --------------------------------------------------------------
+        // Jamais un document d'écran dédié dans ce tirage (voir
+        // App\Support\TypesEcranDedie) : un tel document reste référencé par
+        // la case (App\Models\EtudiantFichier/PvSoutenanceFichier/...) de son
+        // étudiant/PV/session, qui elle n'est JAMAIS vidée ici — le corbeiller
+        // directement créerait donc une case "orpheline" (document_id
+        // renseigné mais pointant vers un document invisible, puisque
+        // corbeillé), exactement ce que TypesEcranDedie empêche déjà ailleurs
+        // dans l'application (voir DocumentController::abortSiEcranDedie()).
+        // Ces cinq types ont de toute façon déjà leur propre mise en
+        // corbeille de démonstration juste après (on corbeille l'étudiant/le
+        // PV/la session lui-même, pas un de ses documents isolément).
+        $idsEcranDedie = TypesEcranDedie::ids();
+
         // ->random(0) sur une collection vide renvoie simplement une
         // collection vide (pas d'exception) : sûr même si $documentsCrees
         // est vide (référentiels/types tous manquants, cas déjà couvert par
         // les vérifications ci-dessus, mais on ne suppose rien).
-        collect($documentsCrees)
-            ->random(min(3, count($documentsCrees)))
+        $documentsCorbeillables = collect($documentsCrees)
+            ->reject(fn (Document $document) => in_array($document->type_document_id, $idsEcranDedie, true));
+
+        $documentsCorbeillables
+            ->random(min(3, $documentsCorbeillables->count()))
             ->each(fn (Document $document) => $document->delete());
 
         collect($pvSoutenancesCreees)
@@ -662,7 +869,11 @@ class DocumentSeeder extends Seeder
             ->random(min(1, count($reunionsCreees)))
             ->each(fn (Reunion $reunion) => $reunion->delete());
 
-        $this->command?->info(count($documentsCrees).' document(s) de démonstration créé(s) (dont '.count($pvSoutenancesCreees).' PV de soutenance, '.count($sessionsDeliberationCreees).' session(s) de délibération, '.count($sessionsReleveCreees).' session(s) de relevé et '.count($reunionsCreees).' PV de réunion).');
+        collect($etudiantsCrees)
+            ->random(min(1, count($etudiantsCrees)))
+            ->each(fn (Etudiant $etudiant) => $etudiant->delete());
+
+        $this->command?->info(count($documentsCrees).' document(s) de démonstration créé(s) (dont '.count($pvSoutenancesCreees).' PV de soutenance, '.count($sessionsDeliberationCreees).' session(s) de délibération, '.count($sessionsReleveCreees).' session(s) de relevé, '.count($reunionsCreees).' PV de réunion et '.count($etudiantsCrees).' dossier(s) étudiant).');
     }
 
     /**

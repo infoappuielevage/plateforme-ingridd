@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ListeTriable;
 use App\Models\ChampSupplementaire;
 use App\Models\PvSoutenance;
 use App\Models\PvSoutenanceFichier;
@@ -30,22 +31,47 @@ use Illuminate\Validation\Rule;
  */
 class ChampSupplementaireController extends Controller
 {
+    use ListeTriable;
+
     public function index(Request $request): View
     {
         abort_unless(ResourceAccess::can('champs_supplementaires', 'view'), 403);
 
         $corbeille = $request->boolean('corbeille');
 
-        $champs = ChampSupplementaire::query()
-            ->when($corbeille, fn ($q) => $q->onlyTrashed())
-            ->orderBy('ordre')
-            ->paginate(20)
-            ->withQueryString();
+        $colonnesTriables = $this->colonnesTriables();
+        $triResolu = $this->resoudreTri($request, $colonnesTriables, 'ordre', 'asc');
+
+        $requete = ChampSupplementaire::query()->when($corbeille, fn ($q) => $q->onlyTrashed());
+        $this->appliquerTri($requete, $colonnesTriables, $triResolu);
+
+        $champs = $requete->paginate(8)->withQueryString();
 
         return view('gestion.champs-supplementaires.index', [
             'champs' => $champs,
             'corbeille' => $corbeille,
+            'triActuel' => $triResolu[0],
+            'directionActuelle' => $triResolu[1],
         ]);
+    }
+
+    /**
+     * Colonnes triables de la liste (voir App\Http\Controllers\Concerns\ListeTriable)
+     * — "Cycles" n'est pas incluse : colonne JSON affichée via cyclesLibelle(),
+     * pas de notion de tri simple pour un ensemble de valeurs.
+     *
+     * @return array<string, string>
+     */
+    protected function colonnesTriables(): array
+    {
+        return [
+            'libelle' => 'libelle',
+            'ordre' => 'ordre',
+            'actif' => 'actif',
+            'pour_pv' => 'pour_pv',
+            'pour_releve' => 'pour_releve',
+            'pour_soutenance' => 'pour_soutenance',
+        ];
     }
 
     public function create(): View

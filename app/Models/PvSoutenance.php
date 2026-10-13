@@ -27,6 +27,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * supplémentaires) sont gérés séparément, voir fichiers() et
  * App\Models\PvSoutenanceFichier.
  *
+ * `photo` (portrait de l'étudiant, demande explicite du client) suit EXACTEMENT
+ * le même principe que `avatar` sur App\Models\User (voir son docblock) :
+ * volontairement ABSENTE de $fillable, modifiable uniquement via forceFill()
+ * dans PvSoutenanceController::store()/update(), jamais par un simple
+ * ->update() de masse — le chemin stocké ne doit provenir que d'un fichier
+ * réellement uploadé et validé (voir TYPES_PHOTO_ACCEPTES dans le
+ * contrôleur), jamais d'un champ texte arbitraire du formulaire.
+ *
  * Retrait du diplôme (demande explicite du client, allant plus loin qu'un
  * simple "Retiré/Non retiré") : `diplome_retirant`/`diplome_nom_retirant`/
  * `diplome_date_retrait` directement sur CETTE classe plutôt que sur
@@ -45,6 +53,15 @@ class PvSoutenance extends Model
 
     public const NIVEAU_BTS = 'bts';
 
+    /**
+     * Ajouté sur demande explicite du client, après coup ("intègre également
+     * le DTS également qui est un niveau qu'on avait pas mentionné") — DTS et
+     * BTS sont deux diplômes de cycle court équivalents, d'où leur position
+     * côte à côte dans NIVEAUX/les onglets de la liste (voir
+     * PvSoutenanceController::requeteListe()).
+     */
+    public const NIVEAU_DTS = 'dts';
+
     public const NIVEAU_LICENCE = 'licence';
 
     public const NIVEAU_MASTER = 'master';
@@ -54,6 +71,7 @@ class PvSoutenance extends Model
     /** @var array<string, string> valeur enregistrée => libellé affiché */
     public const NIVEAUX = [
         self::NIVEAU_BTS => 'BTS',
+        self::NIVEAU_DTS => 'DTS',
         self::NIVEAU_LICENCE => 'Licence',
         self::NIVEAU_MASTER => 'Master',
         self::NIVEAU_DOCTORAT => 'Doctorat',
@@ -164,6 +182,19 @@ class PvSoutenance extends Model
     public function niveauLibelle(): string
     {
         return self::NIVEAUX[$this->niveau] ?? $this->niveau;
+    }
+
+    /**
+     * Classe CSS (voir public/css/style.css, section "PV de soutenance :
+     * repères de couleur par niveau") pour afficher ce niveau sous forme de
+     * badge coloré plutôt qu'en texte brut — demande explicite du client
+     * ("il n'y a pas de point de repère, tout se ressemble"). Un repère
+     * visuel rapide entre niveaux, surtout utile dans l'onglet "Tous" de la
+     * liste où ils se mélangent (voir resources/views/gestion/pv-soutenances/index.blade.php).
+     */
+    public function niveauBadgeClasse(): string
+    {
+        return array_key_exists($this->niveau, self::NIVEAUX) ? 'bg-niveau-'.$this->niveau : 'text-bg-secondary';
     }
 
     public function decisionLibelle(): string

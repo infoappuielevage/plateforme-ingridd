@@ -77,9 +77,16 @@ use Illuminate\Database\Seeder;
  *
  * Les documents déjà déposés via le Secrétariat pour ces trois types AVANT
  * ce changement restent inchangés en base (toujours de vrais
- * App\Models\Document, `type_document_id` intact) et restent consultables
- * depuis "Tous les documents" (filtrable par type) — seul le raccourci de
- * navigation disparaît, aucune donnée n'est touchée ni masquée.
+ * App\Models\Document, `type_document_id` intact) — mais ne sont PLUS
+ * consultables depuis "Tous les documents" (voir App\Support\TypesEcranDedie
+ * et le docblock de App\Http\Controllers\DocumentController::index() : un
+ * document d'écran dédié en est désormais exclu de la liste générale, faille
+ * de sécurité corrigée, "revoir la sécurité pour éviter l'accessibilité à
+ * des pages confidentielles sans autorisation") ; seul leur écran dédié
+ * respectif (PvSoutenanceController/SessionDeliberationController/
+ * SessionReleveController) les affiche désormais, le raccourci Secrétariat
+ * ayant lui aussi disparu — aucune donnée n'est touchée, seule leur voie
+ * d'accès change.
  *
  * Tout autre type reste utilisable normalement (liste générale des
  * documents, filtrable par type) mais sans entrée dédiée tant que l'admin
@@ -91,22 +98,35 @@ use Illuminate\Database\Seeder;
  * Menu allégé (demande explicite du client, "trop d'éléments dont on a plus
  * besoin pour le moment... on reconstruira au fur et à mesure qu'on
  * avance") : sur une INSTALLATION NEUVE, seuls `PV_SOUTENANCE`,
- * `PV_DELIBERATION`, `RELEVE_NOTES`, `PV_REUNION` (les écrans dédiés déjà
- * construits) et `AUTRE` (filet de sécurité, voir plus haut) sont créés
- * `actif = true` — voir CODES_ACTIFS_PAR_DEFAUT ci-dessous. Sur la base déjà
- * en service, ce même changement a été appliqué une fois pour toutes par la
- * migration 2026_10_06_000001_desactiver_types_document_non_prioritaires
- * (voir son docblock) plutôt qu'ici — et, pour `PV_REUNION` seul (arrivé
- * plus tard, avec App\Http\Controllers\ReunionController), par la migration
- * 2026_10_07_000003_activer_pv_reunion qui le réactive à son tour — : une
- * fois une ligne créée, `actif` n'est PLUS JAMAIS réécrit par ce seeder
- * (voir `run()` ci-dessous) — sinon rejouer ce seeder lors d'un futur
- * déploiement annulerait en silence une réactivation faite entre-temps par
- * le client depuis Administration > Référentiels > Types de documents.
- * Tous les autres types restent entièrement définis dans `$types`
- * ci-dessous (rien n'est supprimé de la liste recensée par le client),
- * juste invisibles pour l'instant dans les menus et le formulaire de
- * création tant qu'ils ne sont pas réactivés.
+ * `PV_DELIBERATION`, `RELEVE_NOTES`, `PV_REUNION`, `DOSSIER_ETUDIANT`,
+ * `ETAT_FINANCIER`, `RECETTE`, `DEPENSE`, `LISTE_ETUDIANTS_FINANCES`,
+ * `CONTRAT` (les écrans dédiés déjà construits) et `AUTRE`
+ * (filet de sécurité, voir plus haut) sont créés `actif = true` — voir
+ * CODES_ACTIFS_PAR_DEFAUT ci-dessous. Sur la base déjà en service, ce même
+ * changement a été appliqué une fois pour toutes par la migration
+ * 2026_10_06_000001_desactiver_types_document_non_prioritaires (voir son
+ * docblock) plutôt qu'ici. `DOSSIER_ETUDIANT`, `ETAT_FINANCIER`,
+ * `RECETTE`, `DEPENSE` et `LISTE_ETUDIANTS_FINANCES`, arrivés plus tard
+ * (avec leurs contrôleurs dédiés respectifs), n'ont pas besoin d'une
+ * migration d'activation équivalente :
+ * code entièrement NOUVEAU, absent de
+ * `$types` avant leur ajout, la ligne n'existait donc pas encore sur la base
+ * déjà en service — `updateOrCreate()` la crée directement avec le bon
+ * `actif` (voir `run()` ci-dessous, `$actifExistant` vaut `null`). Une fois
+ * une ligne créée, `actif` n'est PLUS JAMAIS réécrit par ce seeder — sinon
+ * rejouer ce seeder lors d'un futur déploiement annulerait en silence une
+ * réactivation faite entre-temps par le client depuis Administration >
+ * Référentiels > Types de documents. Tous les autres types restent
+ * entièrement définis dans `$types` ci-dessous (rien n'est supprimé de la
+ * liste recensée par le client), juste invisibles pour l'instant dans les
+ * menus et le formulaire de création tant qu'ils ne sont pas réactivés.
+ *
+ * `PV_REUNION` et `CONTRAT`, à l'inverse, existaient DÉJÀ avant d'obtenir
+ * leur écran dédié (tous deux visés par la désactivation du
+ * 2026_10_06_000001) : chacun a donc reçu sa PROPRE migration de
+ * réactivation (2026_10_07_000003_activer_pv_reunion.php,
+ * 2026_10_23_000004_activer_contrat.php) en plus de son ajout ici à
+ * CODES_ACTIFS_PAR_DEFAUT (utile seulement pour une installation neuve).
  */
 class TypeDocumentSeeder extends Seeder
 {
@@ -135,7 +155,10 @@ class TypeDocumentSeeder extends Seeder
      * est prêt, sans jamais avoir besoin de revenir modifier autre chose
      * dans ce fichier.
      */
-    protected const CODES_ACTIFS_PAR_DEFAUT = ['PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'PV_REUNION', 'AUTRE'];
+    protected const CODES_ACTIFS_PAR_DEFAUT = [
+        'PV_SOUTENANCE', 'PV_DELIBERATION', 'RELEVE_NOTES', 'PV_REUNION', 'DOSSIER_ETUDIANT',
+        'ETAT_FINANCIER', 'RECETTE', 'DEPENSE', 'LISTE_ETUDIANTS_FINANCES', 'CONTRAT', 'AUTRE',
+    ];
 
     public function run(): void
     {
@@ -166,6 +189,11 @@ class TypeDocumentSeeder extends Seeder
             ['code' => 'ORGANIGRAMME', 'libelle' => 'Organigramme INGRIDD', 'ordre' => 24],
             ['code' => 'SPOT_TELE_RADIO', 'libelle' => 'Spot télé et radio', 'ordre' => 25],
             ['code' => 'PV_SOUTENANCE', 'libelle' => 'PV de soutenance', 'ordre' => 26],
+            ['code' => 'DOSSIER_ETUDIANT', 'libelle' => 'Dossier étudiant', 'ordre' => 27],
+            ['code' => 'ETAT_FINANCIER', 'libelle' => 'État financier', 'ordre' => 28],
+            ['code' => 'RECETTE', 'libelle' => 'Recette', 'ordre' => 29],
+            ['code' => 'DEPENSE', 'libelle' => 'Dépense', 'ordre' => 30],
+            ['code' => 'LISTE_ETUDIANTS_FINANCES', 'libelle' => 'Liste des étudiants (finances)', 'ordre' => 31],
             ['code' => 'AUTRE', 'libelle' => 'Autre', 'ordre' => 99],
         ];
 

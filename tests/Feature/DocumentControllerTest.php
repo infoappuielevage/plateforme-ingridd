@@ -14,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\CaptureExportExcel;
 use Tests\TestCase;
 
 /**
@@ -37,6 +38,7 @@ use Tests\TestCase;
  */
 class DocumentControllerTest extends TestCase
 {
+    use CaptureExportExcel;
     use RefreshDatabase;
 
     public function test_un_admin_accede_a_la_liste_des_documents(): void
@@ -44,6 +46,27 @@ class DocumentControllerTest extends TestCase
         $admin = User::factory()->admin()->create();
 
         $this->actingAs($admin)->get(route('gestion.documents.index'))->assertOk();
+    }
+
+    /**
+     * Demande explicite du client : tous les tableaux de l'espace de gestion
+     * limités à 8 lignes par page, le reste accessible par numéro de page —
+     * voir le ->paginate(8) de index() et App\Providers\AppServiceProvider::
+     * boot() (rendu Bootstrap 5 des liens). Même changement appliqué à tous
+     * les autres écrans de liste (Étudiants, PV de soutenance, Sessions,
+     * Réunions, Référentiels, Types de documents, Historique...) : un seul
+     * test ici suffit à couvrir le principe, partagé par ->paginate(8) dans
+     * chacun de ces contrôleurs.
+     */
+    public function test_la_liste_des_documents_est_paginee_a_huit_par_page(): void
+    {
+        $admin = User::factory()->admin()->create();
+        Document::factory()->count(10)->create();
+
+        $reponse = $this->actingAs($admin)->get(route('gestion.documents.index'));
+
+        $reponse->assertOk();
+        $reponse->assertViewHas('documents', fn ($documents) => $documents->perPage() === 8);
     }
 
     public function test_un_role_sans_permission_ne_peut_pas_voir_les_documents(): void
@@ -321,6 +344,7 @@ class DocumentControllerTest extends TestCase
         yield 'PV de délibération' => ['PV_DELIBERATION'];
         yield 'Relevés de notes' => ['RELEVE_NOTES'];
         yield 'PV de réunion' => ['PV_REUNION'];
+        yield 'Dossier étudiant' => ['DOSSIER_ETUDIANT'];
     }
 
     /**
@@ -366,30 +390,227 @@ class DocumentControllerTest extends TestCase
         $this->assertDatabaseMissing('documents', ['type_document_id' => $type->id]);
     }
 
-    /**
-     * Un document déjà classé sous un de ces types (déposé avant ce
-     * changement, ou via l'ancien raccourci Secrétariat à l'époque) doit
-     * rester modifiable normalement — seule la CRÉATION est bloquée.
-     */
-    public function test_modifier_un_document_existant_dun_type_a_ecran_dedie_reste_possible(): void
-    {
-        Storage::fake('documents');
+    // --- Un document déjà classé sous un type à écran dédié (voir
+    // App\Support\TypesEcranDedie) n'est PLUS manipulable depuis ce
+    // formulaire général, même par un administrateur — faille de sécurité
+    // corrigée sur demande explicite du client ("revoir la sécurité pour
+    // éviter l'accessibilité à des pages confidentielles sans
+    // autorisation") : ces documents ont leur propre contrôleur, seul à
+    // connaître les règles qui vont avec (une case qui ne doit jamais
+    // disparaître, voir EtudiantController::supprimerFichier() et
+    // consorts) — les modifier/supprimer ici court-circuiterait ces règles.
+    // Avant cette correction, seule la CRÉATION était bloquée ; un document
+    // déjà classé ainsi restait modifiable/supprimable/téléchargeable ici.
 
+    /** @dataProvider codesAvecEcranDedie */
+    public function test_modifier_un_document_dun_type_a_ecran_dedie_est_bloque(string $code): void
+    {
         $admin = User::factory()->admin()->create();
-        $type = TypeDocument::factory()->create(['code' => 'PV_SOUTENANCE']);
-        $document = Document::factory()->create(['type_document_id' => $type->id, 'description' => 'Avant modification']);
+        $type = TypeDocument::factory()->create(['code' => $code]);
+        $document = Document::factory()->create(['type_document_id' => $type->id]);
+
+        $this->actingAs($admin)
+            ->get(route('gestion.documents.edit', $document->id))
+            ->assertNotFound();
 
         $this->actingAs($admin)
             ->put(route('gestion.documents.update', $document->id), [
                 'type_document_id' => $type->id,
-                'description' => 'Après modification',
+                'description' => 'Tentative de modification',
             ])
-            ->assertRedirect(route('gestion.documents.index'));
+            ->assertNotFound();
 
-        $this->assertDatabaseHas('documents', [
-            'id' => $document->id,
-            'description' => 'Après modification',
+        $this->assertDatabaseMissing('documents', ['id' => $document->id, 'description' => 'Tentative de modification']);
+    }
+
+    /** @dataProvider codesAvecEcranDedie */
+    public function test_supprimer_restaurer_et_supprimer_definitivement_un_document_dun_type_a_ecran_dedie_est_bloque(string $code): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => $code]);
+        $document = Document::factory()->create(['type_document_id' => $type->id]);
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.documents.destroy', $document->id))
+            ->assertNotFound();
+        $this->assertDatabaseHas('documents', ['id' => $document->id, 'deleted_at' => null]);
+
+        $documentCorbeille = Document::factory()->create(['type_document_id' => $type->id]);
+        $documentCorbeille->delete();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.documents.restore', $documentCorbeille->id))
+            ->assertNotFound();
+        $this->assertSoftDeleted('documents', ['id' => $documentCorbeille->id]);
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.documents.force-destroy', $documentCorbeille->id))
+            ->assertNotFound();
+        $this->assertDatabaseHas('documents', ['id' => $documentCorbeille->id]);
+    }
+
+    public function test_basculer_le_retrait_dun_document_dun_type_a_ecran_dedie_est_bloque(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => 'PV_SOUTENANCE']);
+        $document = Document::factory()->create(['type_document_id' => $type->id, 'statut_retrait' => Document::STATUT_RETRAIT_NON_RETIRE]);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.documents.basculer-retrait', $document->id))
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('documents', ['id' => $document->id, 'statut_retrait' => Document::STATUT_RETRAIT_NON_RETIRE]);
+    }
+
+    /** Un id "à écran dédié" glissé dans une sélection groupée est silencieusement ignoré plutôt que traité — jamais atteignable depuis l'écran normalement (voir index(), qui les exclut déjà), mais une requête forgée ne doit pas non plus passer. */
+    public function test_les_actions_groupees_ignorent_les_documents_dun_type_a_ecran_dedie(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => 'DOSSIER_ETUDIANT']);
+        $documentDedie = Document::factory()->create(['type_document_id' => $type->id]);
+        $documentNormal = Document::factory()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.documents.corbeille-groupee'), [
+                'documents' => [$documentDedie->id, $documentNormal->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('documents', ['id' => $documentDedie->id, 'deleted_at' => null]);
+        $this->assertSoftDeleted('documents', ['id' => $documentNormal->id]);
+
+        $documentDedie->delete();
+        $documentDedie->refresh();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.documents.corbeille.restaurer-groupe'), [
+                'documents' => [$documentDedie->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertSoftDeleted('documents', ['id' => $documentDedie->id]);
+
+        $this->actingAs($admin)
+            ->post(route('gestion.documents.corbeille.force-destroy-groupe'), [
+                'documents' => [$documentDedie->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('documents', ['id' => $documentDedie->id]);
+    }
+
+    /**
+     * La liste générale ("Tous les documents") n'affiche plus AUCUN document
+     * d'un type à écran dédié, même pour un administrateur — avant cette
+     * correction, un rôle n'ayant QUE le droit générique "documents" (ex.
+     * "Gestionnaire", voir database/seeders/RoleSeeder.php, qui n'a PAS le
+     * droit "etudiants") pouvait voir et télécharger des pièces de dossier
+     * étudiant depuis cet écran, sans avoir le droit du module concerné.
+     */
+    public function test_la_liste_generale_najamais_les_documents_dun_type_a_ecran_dedie(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => 'DOSSIER_ETUDIANT']);
+        Document::factory()->create(['type_document_id' => $type->id, 'nom_original' => 'cnib-etudiant.pdf']);
+        Document::factory()->create(['nom_original' => 'contrat-normal.pdf']);
+
+        $this->actingAs($admin)
+            ->get(route('gestion.documents.index'))
+            ->assertOk()
+            ->assertDontSee('cnib-etudiant.pdf')
+            ->assertSee('contrat-normal.pdf');
+    }
+
+    /** Même chose côté corbeille : un document d'écran dédié corbeillé (ex. retiré d'une case puis orphelin, voir SessionDeliberationController::forceDestroy()) n'y apparaît plus non plus, seul "Vider la corbeille" peut encore l'effacer. */
+    public function test_la_corbeille_generale_najamais_les_documents_dun_type_a_ecran_dedie(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $type = TypeDocument::factory()->create(['code' => 'PV_DELIBERATION']);
+        $document = Document::factory()->create(['type_document_id' => $type->id, 'nom_original' => 'pv-corbeille.pdf']);
+        $document->delete();
+
+        $this->actingAs($admin)
+            ->get(route('gestion.documents.index', ['corbeille' => 1]))
+            ->assertOk()
+            ->assertDontSee('pv-corbeille.pdf');
+    }
+
+    /**
+     * Télécharger/consulter une pièce d'un type à écran dédié exige AUSSI le
+     * droit "Voir" du module propriétaire, en plus du droit générique
+     * "documents" — voir App\Support\TypesEcranDedie::ressourcePourCode()
+     * et routes/web.php. Avant cette correction, le droit générique
+     * "documents" suffisait à lui seul.
+     */
+    public function test_le_telechargement_dune_piece_dossier_etudiant_exige_le_droit_etudiants(): void
+    {
+        Storage::fake('documents');
+        Storage::disk('documents')->put('uploads/cnib.pdf', 'contenu');
+
+        $type = TypeDocument::factory()->create(['code' => 'DOSSIER_ETUDIANT']);
+        $document = Document::factory()->create(['type_document_id' => $type->id, 'chemin' => 'uploads/cnib.pdf']);
+
+        Role::query()->create([
+            'slug' => 'documents_sans_etudiants',
+            'name' => 'Documents sans étudiants',
+            'permissions' => [
+                'documents' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+                'etudiants' => ['view' => false],
+            ],
         ]);
+        $utilisateur = User::factory()->create(['role' => 'documents_sans_etudiants']);
+
+        $this->actingAs($utilisateur)
+            ->get(route('documents.telecharger', $document->id))
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->get(route('documents.voir', $document->id))
+            ->assertForbidden();
+    }
+
+    /** Pendant du test précédent : avec le droit du module propriétaire en plus, le téléchargement fonctionne normalement. */
+    public function test_le_telechargement_dune_piece_dossier_etudiant_fonctionne_avec_le_droit_etudiants(): void
+    {
+        Storage::fake('documents');
+        Storage::disk('documents')->put('uploads/cnib.pdf', 'contenu');
+
+        $type = TypeDocument::factory()->create(['code' => 'DOSSIER_ETUDIANT']);
+        $document = Document::factory()->create(['type_document_id' => $type->id, 'chemin' => 'uploads/cnib.pdf']);
+
+        Role::query()->create([
+            'slug' => 'documents_et_etudiants',
+            'name' => 'Documents et étudiants',
+            'permissions' => [
+                'documents' => ['view' => true],
+                'etudiants' => ['view' => true],
+            ],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'documents_et_etudiants']);
+
+        $this->actingAs($utilisateur)
+            ->get(route('documents.telecharger', $document->id))
+            ->assertOk();
+    }
+
+    /** Un document SANS écran dédié reste téléchargeable avec le seul droit générique "documents", exactement comme avant. */
+    public function test_le_telechargement_dun_document_sans_ecran_dedie_ne_necessite_que_le_droit_documents(): void
+    {
+        Storage::fake('documents');
+        Storage::disk('documents')->put('uploads/contrat.pdf', 'contenu');
+
+        $document = Document::factory()->create(['chemin' => 'uploads/contrat.pdf']);
+
+        Role::query()->create([
+            'slug' => 'documents_seulement',
+            'name' => 'Documents seulement',
+            'permissions' => ['documents' => ['view' => true]],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'documents_seulement']);
+
+        $this->actingAs($utilisateur)
+            ->get(route('documents.telecharger', $document->id))
+            ->assertOk();
     }
 
     public function test_le_bouton_marquer_comme_retire_met_a_jour_le_statut(): void
@@ -504,6 +725,32 @@ class DocumentControllerTest extends TestCase
             ->assertOk()
             ->assertSee('recent.pdf')
             ->assertDontSee('ancien.pdf');
+    }
+
+    /**
+     * export() respecte EXACTEMENT les mêmes filtres que index() (même
+     * requeteListe() partagée, voir le docblock d'export()) — vérifié ici
+     * avec le même filtre (année académique) que le test juste au-dessus.
+     */
+    public function test_lexport_respecte_les_filtres_de_la_liste(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $ancienne = AnneeAcademique::factory()->create(['libelle' => '2024-2025']);
+        $recente = AnneeAcademique::factory()->create(['libelle' => '2025-2026']);
+
+        Document::factory()->create(['description' => 'Document ancien', 'nom_original' => 'ancien.pdf', 'annee_academique_id' => $ancienne->id]);
+        Document::factory()->create(['description' => 'Document récent', 'nom_original' => 'recent.pdf', 'annee_academique_id' => $recente->id]);
+
+        $reponse = $this->actingAs($admin)
+            ->get(route('gestion.documents.export', ['annee_academique_id' => $recente->id]))
+            ->assertOk();
+
+        $lignes = $this->lignesExportees($reponse->baseResponse);
+
+        $this->assertCount(1, $lignes);
+        $this->assertSame('Document récent', array_values($lignes)[0][0]);
+        $this->assertSame('recent.pdf', array_values($lignes)[0][8]);
     }
 
     public function test_un_document_supprime_va_a_la_corbeille_sans_perdre_son_fichier(): void
@@ -907,20 +1154,30 @@ class DocumentControllerTest extends TestCase
     // Remplace tests/Feature/DocumentListTabsTest.php (App\Filament\Resources\
     // DocumentResource\Pages\ListDocuments::getTabs(), retiré).
 
+    /**
+     * SYLLABUS_FILIERES, pas RELEVE_NOTES/PV_SOUTENANCE/PV_DELIBERATION/
+     * DOSSIER_ETUDIANT (qui font pourtant aussi partie de la famille
+     * "académique", voir App\Support\FamillesDocument) : ces quatre codes
+     * ont désormais leur propre écran dédié et n'apparaissent plus JAMAIS
+     * dans la liste générale, onglet "académique" compris (voir
+     * App\Support\TypesEcranDedie et test_la_liste_generale_najamais_les_documents_dun_type_a_ecran_dedie
+     * ci-dessus) — ce test porte sur le filtre par onglet lui-même, pas sur
+     * cette exclusion, d'où un code "académique" qui n'a pas d'écran dédié.
+     */
     public function test_longlet_academique_ne_montre_que_les_types_academiques(): void
     {
         $admin = User::factory()->admin()->create();
 
-        $typeReleve = TypeDocument::factory()->create(['code' => 'RELEVE_NOTES']);
+        $typeSyllabus = TypeDocument::factory()->create(['code' => 'SYLLABUS_FILIERES']);
         $typeContrat = TypeDocument::factory()->create(['code' => 'CONTRAT']);
 
-        Document::factory()->create(['type_document_id' => $typeReleve->id, 'nom_original' => 'releve.pdf']);
+        Document::factory()->create(['type_document_id' => $typeSyllabus->id, 'nom_original' => 'syllabus.pdf']);
         Document::factory()->create(['type_document_id' => $typeContrat->id, 'nom_original' => 'contrat.pdf']);
 
         $this->actingAs($admin)
             ->get(route('gestion.documents.index', ['onglet' => 'academique']))
             ->assertOk()
-            ->assertSee('releve.pdf')
+            ->assertSee('syllabus.pdf')
             ->assertDontSee('contrat.pdf');
     }
 
@@ -941,21 +1198,22 @@ class DocumentControllerTest extends TestCase
             ->assertDontSee('pv.pdf');
     }
 
+    /** SYLLABUS_FILIERES plutôt que RELEVE_NOTES — même raison que le test précédent : un type à écran dédié n'apparaît plus JAMAIS ici, quel que soit l'onglet. */
     public function test_longlet_tous_montre_tous_les_types(): void
     {
         $admin = User::factory()->admin()->create();
 
         $typeContrat = TypeDocument::factory()->create(['code' => 'CONTRAT']);
-        $typeReleve = TypeDocument::factory()->create(['code' => 'RELEVE_NOTES']);
+        $typeSyllabus = TypeDocument::factory()->create(['code' => 'SYLLABUS_FILIERES']);
 
         Document::factory()->create(['type_document_id' => $typeContrat->id, 'nom_original' => 'contrat.pdf']);
-        Document::factory()->create(['type_document_id' => $typeReleve->id, 'nom_original' => 'releve.pdf']);
+        Document::factory()->create(['type_document_id' => $typeSyllabus->id, 'nom_original' => 'syllabus.pdf']);
 
         $this->actingAs($admin)
             ->get(route('gestion.documents.index', ['onglet' => 'tous']))
             ->assertOk()
             ->assertSee('contrat.pdf')
-            ->assertSee('releve.pdf');
+            ->assertSee('syllabus.pdf');
     }
 
     /** Un onglet inconnu dans l'URL (lien externe, favori obsolète...) retombe silencieusement sur "tous" plutôt qu'une erreur 404/500. */

@@ -20,7 +20,7 @@ class RoleSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_les_cinq_roles_organisation_sont_crees_sans_aucun_droit(): void
+    public function test_les_cinq_roles_organisation_sont_crees_en_lecture_seule_partout(): void
     {
         (new RoleSeeder)->run();
 
@@ -35,10 +35,41 @@ class RoleSeederTest extends TestCase
 
             $this->assertNotNull($role, "Le rôle \"{$slug}\" devrait exister.");
             $this->assertSame($nom, $role->name);
-            // Aucun droit accordé par défaut — le client les configurera lui-même
-            // depuis Rôles & permissions (voir le docblock du seeder).
-            $this->assertSame([], $role->permissions);
+
+            // Droit "Voir" partout, rien d'autre, par défaut — demande
+            // explicite du client : un rôle sans aucun droit faisait
+            // apparaître un tableau de bord qui semblait vide/pas à jour
+            // (voir le docblock du seeder). Le client resserre ou élargit
+            // ensuite depuis Rôles & permissions.
+            foreach (\App\Support\ResourceAccess::RESSOURCES as $ressource => $libelle) {
+                $this->assertSame(
+                    ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
+                    $role->permissions[$ressource] ?? null,
+                    "Le rôle \"{$slug}\" devrait avoir le droit \"Voir\" uniquement sur \"{$ressource}\"."
+                );
+            }
         }
+    }
+
+    /**
+     * Installations déjà en place AVANT ce changement : ces cinq rôles y
+     * existent encore avec `permissions = []` (ancien comportement). Rejouer
+     * le seeder (ex. lors d'une mise à jour) doit les faire passer en
+     * lecture seule, exactement comme une installation toute neuve —
+     * personne ne doit rester bloqué avec un tableau de bord vide juste
+     * parce que son rôle a été créé avant ce correctif.
+     */
+    public function test_un_role_organisation_jamais_configure_recoit_la_lecture_seule_au_prochain_passage(): void
+    {
+        Role::query()->create(['slug' => 'secretariat', 'name' => 'Secrétariat', 'permissions' => []]);
+
+        (new RoleSeeder)->run();
+
+        $secretariat = Role::query()->where('slug', 'secretariat')->firstOrFail();
+        $this->assertSame(
+            ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
+            $secretariat->permissions['documents']
+        );
     }
 
     public function test_rejouer_le_seeder_ne_duplique_rien(): void

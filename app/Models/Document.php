@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\Auditable;
 use App\Support\Formatage;
+use App\Support\Verrouillage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -43,6 +44,15 @@ use Illuminate\Support\Facades\Storage;
  * affichés directement sur le document (l'historique complet — Administration
  * > Historique — trace en plus chaque changement individuel, avec le détail
  * avant/après).
+ *
+ * `deverrouille_le`/`deverrouille_par_id` et `verrouille_le`/
+ * `verrouille_par_id` : voir App\Support\Verrouillage et estVerrouille()
+ * ci-dessous — un document "verrouillé" (année académique ou date de dépôt
+ * trop ancienne, seuils réglés dans Administration > Paramètres, OU
+ * verrouillage manuel) ne peut plus être remplacé/supprimé tant qu'il n'a
+ * pas été déverrouillé explicitement (voir DocumentController::
+ * verrouiller()/deverrouiller()). Les deux paires de colonnes sont
+ * mutuellement exclusives.
  *
  * `nom_titulaire`/`numero_diplome`/`date_delivrance`/`mention`/
  * `statut_retrait`/`date_retrait`/`retrait_enregistre_par_id` ne concernent
@@ -107,6 +117,10 @@ class Document extends Model
         'taille',
         'uploaded_by',
         'modifie_par',
+        'deverrouille_le',
+        'deverrouille_par_id',
+        'verrouille_le',
+        'verrouille_par_id',
     ];
 
     protected function casts(): array
@@ -118,6 +132,8 @@ class Document extends Model
             'date_retrait' => 'date',
             'date_soutenance' => 'date',
             'deleted_at' => 'datetime',
+            'deverrouille_le' => 'datetime',
+            'verrouille_le' => 'datetime',
         ];
     }
 
@@ -159,6 +175,28 @@ class Document extends Model
     public function retraitEnregistrePar(): BelongsTo
     {
         return $this->belongsTo(User::class, 'retrait_enregistre_par_id');
+    }
+
+    public function deverrouillePar(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deverrouille_par_id');
+    }
+
+    public function verrouillePar(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verrouille_par_id');
+    }
+
+    /** Voir App\Support\Verrouillage — true si ce document a été verrouillé manuellement, OU qu'il tombe sous l'un des deux seuils réglés dans Administration > Paramètres > Verrouillage, et qu'il n'a pas été explicitement déverrouillé depuis. */
+    public function estVerrouille(): bool
+    {
+        return Verrouillage::estVerrouille($this);
+    }
+
+    /** Explication lisible du verrouillage, ou null si estVerrouille() est faux. */
+    public function raisonVerrouillage(): ?string
+    {
+        return $this->estVerrouille() ? Verrouillage::raison($this) : null;
     }
 
     /** Libellé lisible du semestre (ex. "Semestre 1"), ou null si non renseigné. */

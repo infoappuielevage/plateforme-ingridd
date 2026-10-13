@@ -12,6 +12,11 @@
     $nombreColonnes = ($aDesSousTypes && ! $sousTypeDocument ? 1 : 0)
         + ($type->champs_diplome_actifs ? 5 : ($type->champs_soutenance_actifs ? 4 : 3))
         + 3;
+    // Paramètres de route communs à chaque <x-th-triable> ci-dessous — cet
+    // écran est irrégulier (route gestion.secretariat, path params {code}/
+    // {sousType?}, voir le docblock de SecretariatController) : sans ce
+    // :parametres, le lien généré perdrait ces deux segments d'URL.
+    $parametresTri = ['code' => $type->code, 'sousType' => $sousTypeDocument?->id];
 @endphp
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -97,24 +102,24 @@
                     @endif
 
                     @if ($type->champs_diplome_actifs)
-                        <th>Titulaire</th>
-                        <th>Numéro</th>
-                        <th>Délivrance</th>
-                        <th>Mention</th>
-                        <th>Retrait</th>
+                        <x-th-triable cle="nom_titulaire" libelle="Titulaire" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="numero_diplome" libelle="Numéro" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="date_delivrance" libelle="Délivrance" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="mention" libelle="Mention" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="statut_retrait" libelle="Retrait" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
                     @elseif ($type->champs_soutenance_actifs)
-                        <th>Titulaire</th>
-                        <th>Thème du mémoire</th>
-                        <th>Soutenance</th>
-                        <th>Jury</th>
+                        <x-th-triable cle="nom_titulaire" libelle="Titulaire" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="theme_memoire" libelle="Thème du mémoire" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="date_soutenance" libelle="Soutenance" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="membres_jury" libelle="Jury" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
                     @else
-                        <th>Filière</th>
-                        <th>Niveau{{ $type->champ_semestre_actif ? ' / Semestre' : '' }}</th>
-                        <th>Année académique</th>
+                        <x-th-triable cle="filiere" libelle="Filière" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="niveau" :libelle="'Niveau'.($type->champ_semestre_actif ? ' / Semestre' : '')" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                        <x-th-triable cle="annee_academique" libelle="Année académique" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
                     @endif
 
-                    <th>Fichier</th>
-                    <th>Ajouté par</th>
+                    <x-th-triable cle="nom_original" libelle="Fichier" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
+                    <x-th-triable cle="ajoute_par" libelle="Ajouté par" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.secretariat" :parametres="$parametresTri" />
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>

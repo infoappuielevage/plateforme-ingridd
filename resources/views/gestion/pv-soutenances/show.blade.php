@@ -4,9 +4,22 @@
 
 @section('content')
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <div>
-        <h1 class="h3 mb-0">{{ $pvSoutenance->nomComplet() }}</h1>
-        <p class="text-muted small mb-0">{{ $pvSoutenance->niveauLibelle() }} — {{ $pvSoutenance->filiere->libelle }} — N° PV {{ $pvSoutenance->numero_pv }}</p>
+    <div class="d-flex align-items-center gap-3">
+        @if ($pvSoutenance->photo)
+            <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($pvSoutenance->photo) }}" alt="Photo de {{ $pvSoutenance->nomComplet() }}"
+                 class="rounded-circle" style="width: 56px; height: 56px; object-fit: cover;">
+        @else
+            <div class="rounded-circle bg-secondary-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width: 56px; height: 56px;">
+                <i class="bi bi-person-fill fs-4 text-secondary"></i>
+            </div>
+        @endif
+        <div>
+            <h1 class="h3 mb-0">{{ $pvSoutenance->nomComplet() }}</h1>
+            <p class="text-muted small mb-0 d-flex align-items-center gap-2">
+                <span class="badge {{ $pvSoutenance->niveauBadgeClasse() }}">{{ $pvSoutenance->niveauLibelle() }}</span>
+                {{ $pvSoutenance->filiere->libelle }} — N° PV {{ $pvSoutenance->numero_pv }}
+            </p>
+        </div>
     </div>
     <div class="d-flex gap-2">
         @if (\App\Support\ResourceAccess::can('pv_soutenances', 'edit'))
@@ -29,7 +42,9 @@
 @endif
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-info-circle"></i> Détails</div>
+    <div class="card-header header-primary d-flex align-items-center gap-2">
+        <i class="bi bi-info-circle"></i> Détails
+    </div>
     <div class="card-body">
         <div class="row g-3">
             <div class="col-md-3">
@@ -90,15 +105,27 @@
 @endphp
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-file-earmark-arrow-up"></i> Documents</div>
+    <div class="card-header header-info d-flex align-items-center gap-2">
+        <i class="bi bi-file-earmark-arrow-up"></i> Documents
+    </div>
     <div class="table-responsive">
         <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th style="width: 40%;">Pièce</th>
+                    <th>Fichier</th>
+                    <th style="width: 220px;">Verrouillage</th>
+                </tr>
+            </thead>
             <tbody>
                 @foreach ($fixes as $fichier)
                     <tr>
                         <td style="width: 40%;">{{ $fichier->libelle() }}</td>
                         <td>
                             @include('gestion.pv-soutenances._case', ['fichier' => $fichier, 'peutModifier' => $peutModifier, 'peutSupprimer' => $peutSupprimer, 'pvSoutenance' => $pvSoutenance])
+                        </td>
+                        <td>
+                            @include('gestion.partials._verrou_document', ['document' => $fichier->document])
                         </td>
                     </tr>
                 @endforeach
@@ -116,7 +143,9 @@
      déposé : uniquement le diplôme est concerné, jamais l'image du registre
      ni les champs supplémentaires. --}}
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-person-check"></i> Retrait du diplôme</div>
+    <div class="card-header header-accent d-flex align-items-center gap-2">
+        <i class="bi bi-person-check"></i> Retrait du diplôme
+    </div>
     <div class="card-body">
         @if ($pvSoutenance->estDiplomeRetire())
             <div class="row g-3 align-items-start">
@@ -214,15 +243,27 @@
      s'applique à ce niveau. --}}
 @if ($supplementaires->isNotEmpty())
     <div class="card shadow-sm mb-3">
-        <div class="card-header bg-transparent"><i class="bi bi-file-earmark-plus"></i> Documents supplémentaires</div>
+        <div class="card-header header-success d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-plus"></i> Documents supplémentaires
+        </div>
         <div class="table-responsive">
             <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">Pièce</th>
+                        <th>Fichier</th>
+                        <th style="width: 220px;">Verrouillage</th>
+                    </tr>
+                </thead>
                 <tbody>
                     @foreach ($supplementaires as $fichier)
                         <tr>
                             <td style="width: 40%;">{{ $fichier->libelle() }}</td>
                             <td>
                                 @include('gestion.pv-soutenances._case', ['fichier' => $fichier, 'peutModifier' => $peutModifier, 'peutSupprimer' => $peutSupprimer, 'pvSoutenance' => $pvSoutenance])
+                            </td>
+                            <td>
+                                @include('gestion.partials._verrou_document', ['document' => $fichier->document])
                             </td>
                         </tr>
                     @endforeach

@@ -28,9 +28,9 @@ namespace App\Support;
  */
 class FamillesDocument
 {
-    /** Listes d'étudiants, relevés de notes, délibérations, PV de soutenance, syllabus, cahier pédagogique, bilan des cours. */
+    /** Listes d'étudiants, dossiers étudiant, relevés de notes, délibérations, PV de soutenance, syllabus, cahier pédagogique, bilan des cours. */
     private const CODES_ACADEMIQUE = [
-        'LISTE_ETUDIANTS', 'RELEVE_NOTES', 'PV_DELIBERATION', 'PV_SOUTENANCE',
+        'LISTE_ETUDIANTS', 'DOSSIER_ETUDIANT', 'RELEVE_NOTES', 'PV_DELIBERATION', 'PV_SOUTENANCE',
         'SYLLABUS_FILIERES', 'CAHIER_PEDAGOGIQUE', 'BILAN_COURS_LIGNE',
     ];
 

@@ -55,21 +55,34 @@ class MenuTypesDocumentsTest extends TestCase
             ->assertSee('Courrier');
     }
 
-    /** Délibération et PV de soutenance restent deux types distincts (champs dédiés différents) mais apparaissent regroupés sous "PV" dans le menu. */
-    public function test_deliberation_et_soutenance_apparaissent_regroupes_sous_pv(): void
+    /**
+     * Demande explicite du client ("n'est-il pas temps d'enlever ce qui est
+     * en bas... du menu") : les types à écran dédié (voir
+     * App\Support\TypesEcranDedie) n'apparaissent plus du tout dans ce
+     * sous-menu "Types de documents" — ni regroupés sous "PV" (ancien
+     * comportement), ni en entrée individuelle — puisqu'ils mènent chacun à
+     * leur propre écran de gestion (liens fixes de la section "Documents"
+     * plus haut dans la sidebar, inchangés) plutôt qu'au filtre générique
+     * "Tous les documents" que ce sous-menu construit.
+     */
+    public function test_le_groupe_pv_et_les_types_a_ecran_dedie_napparaissent_plus_dans_ce_sous_menu(): void
     {
         Storage::fake('sauvegardes');
 
         $admin = User::factory()->admin()->create();
         TypeDocument::factory()->create(['code' => 'PV_DELIBERATION', 'libelle' => 'Délibération', 'actif' => true]);
         TypeDocument::factory()->create(['code' => 'PV_SOUTENANCE', 'libelle' => 'PV de soutenance', 'actif' => true]);
+        $releveNotes = TypeDocument::factory()->create(['code' => 'RELEVE_NOTES', 'libelle' => 'Relevés de notes (référentiel)', 'actif' => true]);
+        SousTypeDocument::factory()->create(['type_document_id' => $releveNotes->id, 'libelle' => 'Licence', 'actif' => true]);
 
         $this->actingAs($admin)
             ->get(route('gestion.dashboard'))
             ->assertOk()
-            ->assertSee('PV')
-            ->assertSee('Délibération')
-            ->assertSee('PV de soutenance');
+            // L'ancien groupe dépliable "PV" (id="sidebarMenugroupe-pv", voir
+            // gestion.blade.php) ne doit plus être généré du tout.
+            ->assertDontSee('id="sidebarMenugroupe-pv"', false)
+            ->assertDontSee('id="sidebarMenutype-'.$releveNotes->id.'"', false)
+            ->assertDontSee('Relevés de notes (référentiel)');
     }
 
     public function test_un_sous_type_inactif_ne_saffiche_pas(): void

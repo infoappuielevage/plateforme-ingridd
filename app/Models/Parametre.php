@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Support\TypesFichiers;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -47,6 +48,18 @@ class Parametre extends Model
         'frequence_sauvegarde_auto',
         'types_fichiers_autorises',
         'nombre_annees_these_doctorat',
+        'mail_host',
+        'mail_port',
+        'mail_username',
+        'mail_password',
+        'mail_encryption',
+        'mail_from_address',
+        'mail_from_name',
+        // Voir App\Support\Verrouillage — deux seuils indépendants, tous les
+        // deux facultatifs (nullable), réglables depuis Administration >
+        // Paramètres > Verrouillage.
+        'verrouillage_annee_academique_id',
+        'verrouillage_date',
     ];
 
     protected function casts(): array
@@ -58,7 +71,22 @@ class Parametre extends Model
             'retention_sauvegardes_nombre' => 'integer',
             'types_fichiers_autorises' => 'array',
             'nombre_annees_these_doctorat' => 'integer',
+            'mail_port' => 'integer',
+            // Chiffré en base (voir le docblock de la migration
+            // 2026_10_10_000001_add_configuration_mail_to_parametres_table.php)
+            // — jamais stocké ni journalisé en clair. Eloquent le déchiffre
+            // automatiquement à la lecture (avec APP_KEY), donc
+            // $parametres->mail_password redonne bien le mot de passe en
+            // clair dans le code PHP (ex. appliquerConfigurationMail()
+            // ci-dessous) : seule la colonne SQL elle-même est chiffrée.
+            'mail_password' => 'encrypted',
+            'verrouillage_date' => 'date',
         ];
+    }
+
+    public function verrouillageAnneeAcademique(): BelongsTo
+    {
+        return $this->belongsTo(AnneeAcademique::class, 'verrouillage_annee_academique_id');
     }
 
     /**
@@ -94,14 +122,22 @@ class Parametre extends Model
     /**
      * La planification (routes/console.php) reste quotidienne côté Laravel —
      * c'est ici qu'on décide si le jour convient à la fréquence choisie,
-     * pour que changer "quotidienne" en "hebdomadaire"/"mensuelle" depuis
-     * Administration > Paramètres n'exige jamais de toucher au code.
+     * pour que changer "quotidienne" en "hebdomadaire"/"mensuelle"/
+     * "annuelle" depuis Administration > Paramètres n'exige jamais de
+     * toucher au code.
      */
     public function doitSauvegarderAujourdhui(): bool
     {
         return match ($this->frequence_sauvegarde_auto) {
             'hebdomadaire' => now()->isMonday(),
             'mensuelle' => now()->day === 1,
+            // Demande explicite du client, en plus de quotidienne/
+            // hebdomadaire/mensuelle : garder au moins une sauvegarde par
+            // année civile, au cas où aucune des fréquences plus
+            // rapprochées n'aurait été activée ("pourquoi pas une
+            // sauvegarde automatique également chaque année") — 1er
+            // janvier, même logique que "le 1er du mois" pour mensuelle.
+            'annuelle' => now()->month === 1 && now()->day === 1,
             default => true, // 'quotidienne'
         };
     }
@@ -147,6 +183,42 @@ class Parametre extends Model
         return ! empty($this->types_fichiers_autorises)
             ? $this->types_fichiers_autorises
             : TypesFichiers::toutesLesCles();
+    }
+
+    /**
+     * Surcharge la configuration mail de Laravel (normalement lue depuis
+     * le fichier .env, voir config/mail.php) par celle enregistrée ici
+     * (Administration > Paramètres > Configuration mail) — demande
+     * explicite du client : pouvoir renouveler un mot de passe d'application
+     * (Gmail...) ou changer d'hébergeur SMTP sans avoir à modifier .env à la
+     * main sur le serveur.
+     *
+     * UNIQUEMENT si `mail_host` est renseigné : tant que cet écran n'a
+     * jamais été rempli, cette méthode ne fait rien et .env continue de
+     * faire foi exactement comme avant son existence — aucune régression
+     * pour une installation qui n'utilise pas ce réglage.
+     *
+     * Appelée une fois par requête depuis
+     * App\Providers\AppServiceProvider::boot(), juste après avoir chargé
+     * $this (voir son docblock) — avant qu'un email puisse potentiellement
+     * partir (ex. réinitialisation de mot de passe).
+     */
+    public function appliquerConfigurationMail(): void
+    {
+        if (! $this->mail_host) {
+            return;
+        }
+
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => $this->mail_host,
+            'mail.mailers.smtp.port' => $this->mail_port ?: 587,
+            'mail.mailers.smtp.username' => $this->mail_username,
+            'mail.mailers.smtp.password' => $this->mail_password,
+            'mail.mailers.smtp.encryption' => $this->mail_encryption ?: null,
+            'mail.from.address' => $this->mail_from_address ?: config('mail.from.address'),
+            'mail.from.name' => $this->mail_from_name ?: config('mail.from.name'),
+        ]);
     }
 
     /** Conservée pour compatibilité (appelée après enregistrement) — sans effet, actuel() ne cache plus rien. */

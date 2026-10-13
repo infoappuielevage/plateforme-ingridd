@@ -22,12 +22,15 @@
 
 <form method="POST"
       action="{{ $pvSoutenance ? route('gestion.pv-soutenances.update', $pvSoutenance->id) : route('gestion.pv-soutenances.store') }}"
+      enctype="multipart/form-data"
       style="max-width: 900px;">
     @csrf
     @if ($pvSoutenance) @method('PUT') @endif
 
     <div class="card shadow-sm mb-3">
-        <div class="card-header bg-transparent"><i class="bi bi-journal-bookmark"></i> Registre</div>
+        <div class="card-header header-primary d-flex align-items-center gap-2">
+            <i class="bi bi-journal-bookmark"></i> Registre
+        </div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
@@ -61,9 +64,29 @@
     </div>
 
     <div class="card shadow-sm mb-3">
-        <div class="card-header bg-transparent"><i class="bi bi-person-badge"></i> Étudiant</div>
+        <div class="card-header header-info d-flex align-items-center gap-2">
+            <i class="bi bi-person-badge"></i> Étudiant
+        </div>
         <div class="card-body">
             <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label">Photo</label>
+                    <div class="d-flex align-items-center gap-3 mb-2">
+                        @if ($pvSoutenance?->photo)
+                            <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($pvSoutenance->photo) }}" alt="Photo actuelle"
+                                 class="rounded-circle" style="width: 64px; height: 64px; object-fit: cover;">
+                        @else
+                            <div class="rounded-circle bg-secondary-subtle d-flex align-items-center justify-content-center" style="width: 64px; height: 64px;">
+                                <i class="bi bi-person-fill fs-3 text-secondary"></i>
+                            </div>
+                        @endif
+                    </div>
+                    <input type="file" name="photo" class="form-control" accept=".png,.jpg,.jpeg,.webp">
+                    <div class="form-text">
+                        PNG, JPEG ou WebP, carrée de préférence ({{ $tailleMaxPhotoMo }} Mo maximum).
+                        Laissez vide pour {{ $pvSoutenance ? 'garder la photo actuelle' : 'ne pas ajouter de photo pour le moment' }}.
+                    </div>
+                </div>
                 <div class="col-md-6">
                     <label class="form-label">Nom <span class="text-danger">*</span></label>
                     <input type="text" name="nom" class="form-control" maxlength="150" value="{{ $v('nom') }}" required>
@@ -95,7 +118,9 @@
     </div>
 
     <div class="card shadow-sm mb-3">
-        <div class="card-header bg-transparent"><i class="bi bi-award"></i> Soutenance</div>
+        <div class="card-header header-accent d-flex align-items-center gap-2">
+            <i class="bi bi-award"></i> Soutenance
+        </div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-12">
@@ -128,7 +153,9 @@
     </div>
 
     <div class="card shadow-sm mb-3">
-        <div class="card-header bg-transparent"><i class="bi bi-people"></i> Jury</div>
+        <div class="card-header header-success d-flex align-items-center gap-2">
+            <i class="bi bi-people"></i> Jury
+        </div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6">

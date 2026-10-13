@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ListeTriable;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ResourceAccess;
@@ -25,13 +26,42 @@ use Illuminate\Validation\Rule;
  */
 class RoleController extends Controller
 {
-    public function index(): View
+    use ListeTriable;
+
+    public function index(Request $request): View
     {
         abort_unless(Auth::user()?->role === User::ROLE_ADMIN, 403);
 
+        $colonnesTriables = $this->colonnesTriables();
+        $triResolu = $this->resoudreTri($request, $colonnesTriables, 'name', 'asc');
+
+        $requete = Role::query()->withCount('users');
+        $this->appliquerTri($requete, $colonnesTriables, $triResolu);
+
+        // paginate(8) plutôt que get() : demande explicite du client (voir
+        // le commentaire équivalent dans UserController::index()).
         return view('gestion.roles.index', [
-            'roles' => Role::query()->withCount('users')->orderBy('name')->get(),
+            'roles' => $requete->paginate(8)->withQueryString(),
+            'triActuel' => $triResolu[0],
+            'directionActuelle' => $triResolu[1],
         ]);
+    }
+
+    /**
+     * "Utilisateurs" trie sur l'alias `users_count` ajouté par
+     * ->withCount('users') ci-dessus — Eloquent l'expose comme une colonne
+     * sélectionnée ordinaire, un orderBy() direct dessus fonctionne sans
+     * sous-requête supplémentaire.
+     *
+     * @return array<string, string>
+     */
+    protected function colonnesTriables(): array
+    {
+        return [
+            'slug' => 'slug',
+            'name' => 'name',
+            'users_count' => 'users_count',
+        ];
     }
 
     public function create(): View
@@ -105,6 +135,11 @@ class RoleController extends Controller
             foreach (ResourceAccess::ACTIONS as $action => $libelleAction) {
                 // Historique : uniquement "Voir" a un sens (lecture seule partout) — même exception que RoleResource::form().
                 if ($cle === 'audit_logs' && $action !== 'view') {
+                    continue;
+                }
+
+                // Verrouillage : uniquement "Modifier" a un sens (un seul geste — verrouiller/déverrouiller un document), voir App\Support\ResourceAccess::RESSOURCES.
+                if ($cle === 'verrouillage_documents' && $action !== 'edit') {
                     continue;
                 }
 

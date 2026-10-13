@@ -5,64 +5,62 @@ namespace Tests\Feature;
 use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
 use App\Support\MenuDocuments;
+use App\Support\TypesEcranDedie;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
  * App\Support\MenuDocuments — construit le sous-menu "Types de documents"
- * du layout (voir son docblock) : regroupement visuel "PV" (Délibération +
- * PV de soutenance, deux types distincts du référentiel) et seau "Autres
- * types" pour tout type actif sans sous-type et hors groupe — sur demande
- * explicite du client, ni fusion de données ni fausses sous-catégories
- * inventées.
+ * du layout (voir son docblock) : exclusion des types à écran dédié
+ * (App\Support\TypesEcranDedie — PV de soutenance, Délibération, Relevés de
+ * notes, PV de réunion...) et seau "Autres types" pour tout type actif sans
+ * sous-type, sans écran dédié et hors groupe — sur demande explicite du
+ * client ("n'est-il pas temps d'enlever ce qui est en bas... du menu"),
+ * repéré en constatant que ces entrées menaient à une liste "Tous les
+ * documents" toujours vide (ces types en sont exclus, voir
+ * DocumentController::requeteListe()).
  */
 class MenuDocumentsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_deliberation_et_soutenance_sont_regroupes_sous_pv(): void
+    /**
+     * Ancien comportement ("Délibération"/"PV de soutenance" regroupés sous
+     * une entrée dépliable "PV") retiré : ces deux types ont rejoint
+     * TypesEcranDedie::CODES (chacun a son propre écran, voir
+     * SessionDeliberationController/PvSoutenanceController) et doivent donc
+     * disparaître ENTIÈREMENT de ce menu — ni groupés, ni en "Autres types",
+     * ni en entrée individuelle — plutôt que de continuer à pointer vers une
+     * liste "Tous les documents" systématiquement vide pour ces types.
+     */
+    public function test_un_type_a_ecran_dedie_napparait_nulle_part_dans_ce_menu(): void
     {
-        // `ordre` explicite : MenuDocuments préserve l'ordre du référentiel
-        // (orderBy('ordre')) — sans valeur fixe ici, l'ordre par défaut de la
-        // factory (aléatoire) rendrait ce test intermittent.
-        $deliberation = TypeDocument::factory()->create(['code' => 'PV_DELIBERATION', 'libelle' => 'Délibération', 'actif' => true, 'ordre' => 1]);
-        $soutenance = TypeDocument::factory()->create(['code' => 'PV_SOUTENANCE', 'libelle' => 'PV de soutenance', 'actif' => true, 'ordre' => 2]);
-
-        $elements = MenuDocuments::elements();
-        $groupePv = $elements->firstWhere('cle', 'groupe-pv');
-
-        $this->assertNotNull($groupePv);
-        $this->assertSame('PV', $groupePv['libelle']);
-        $this->assertNull($groupePv['urlType']);
-        $this->assertCount(2, $groupePv['enfants']);
-        $this->assertSame(
-            ['Délibération', 'PV de soutenance'],
-            $groupePv['enfants']->pluck('libelle')->all(),
-        );
-
-        // Aucune fusion : chacun garde son propre id / URL de filtrage.
-        $this->assertStringContainsString((string) $deliberation->id, $groupePv['enfants'][0]['url']);
-        $this->assertStringContainsString((string) $soutenance->id, $groupePv['enfants'][1]['url']);
-    }
-
-    public function test_le_groupe_pv_napparait_pas_si_aucun_des_deux_types_nexiste(): void
-    {
-        TypeDocument::factory()->create(['code' => 'CONTRAT', 'actif' => true]);
+        TypeDocument::factory()->create(['code' => 'PV_DELIBERATION', 'libelle' => 'Délibération', 'actif' => true]);
+        TypeDocument::factory()->create(['code' => 'PV_SOUTENANCE', 'libelle' => 'PV de soutenance', 'actif' => true]);
+        $releveNotes = TypeDocument::factory()->create(['code' => 'RELEVE_NOTES', 'libelle' => 'Relevés de notes', 'actif' => true]);
+        SousTypeDocument::factory()->create(['type_document_id' => $releveNotes->id, 'libelle' => 'Licence', 'actif' => true]);
 
         $elements = MenuDocuments::elements();
 
         $this->assertNull($elements->firstWhere('cle', 'groupe-pv'));
+        $this->assertNull($elements->firstWhere('cle', 'type-'.$releveNotes->id));
+        foreach ($elements as $element) {
+            $this->assertNotContains('Délibération', $element['enfants']->pluck('libelle')->all());
+            $this->assertNotContains('PV de soutenance', $element['enfants']->pluck('libelle')->all());
+            $this->assertNotContains('Relevés de notes', $element['enfants']->pluck('libelle')->all());
+        }
     }
 
-    public function test_le_groupe_pv_apparait_meme_avec_un_seul_des_deux_types_actif(): void
+    /** Tous les codes TypesEcranDedie sont couverts par l'exclusion, pas seulement les trois les plus anciens (PV_REUNION, par exemple, a rejoint la liste plus tard). */
+    public function test_chaque_type_a_ecran_dedie_est_exclu(): void
     {
-        TypeDocument::factory()->create(['code' => 'PV_DELIBERATION', 'libelle' => 'Délibération', 'actif' => true]);
+        foreach (TypesEcranDedie::CODES as $code) {
+            TypeDocument::factory()->create(['code' => $code, 'libelle' => 'Type '.$code, 'actif' => true]);
+        }
 
-        $groupePv = MenuDocuments::elements()->firstWhere('cle', 'groupe-pv');
+        $elements = MenuDocuments::elements();
 
-        $this->assertNotNull($groupePv);
-        $this->assertCount(1, $groupePv['enfants']);
-        $this->assertSame('Délibération', $groupePv['enfants'][0]['libelle']);
+        $this->assertCount(0, $elements);
     }
 
     public function test_un_type_avec_sous_types_actifs_recoit_sa_propre_entree(): void

@@ -59,15 +59,15 @@
             <div class="row g-3">
                 <div class="col-12">
                     <label class="form-label">Mot de passe actuel</label>
-                    <input type="password" name="mot_de_passe_actuel" class="form-control" autocomplete="current-password">
+                    <x-champ-mot-de-passe name="mot_de_passe_actuel" autocomplete="current-password" />
                 </div>
                 <div class="col-12">
                     <label class="form-label">Nouveau mot de passe</label>
-                    <input type="password" name="nouveau_mot_de_passe" class="form-control" autocomplete="new-password">
+                    <x-champ-mot-de-passe name="nouveau_mot_de_passe" autocomplete="new-password" />
                 </div>
                 <div class="col-12">
                     <label class="form-label">Confirmer le nouveau mot de passe</label>
-                    <input type="password" name="nouveau_mot_de_passe_confirmation" class="form-control" autocomplete="new-password">
+                    <x-champ-mot-de-passe name="nouveau_mot_de_passe_confirmation" autocomplete="new-password" />
                 </div>
             </div>
         </div>

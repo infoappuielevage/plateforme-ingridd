@@ -3,7 +3,7 @@
 @section('title', 'Types de documents')
 
 @section('content')
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div class="page-header-hero d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">Types de documents</h1>
         <p class="text-muted small mb-0">
@@ -18,6 +18,9 @@
         @else
             <a href="{{ route('gestion.types-documents.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-trash3"></i> Corbeille
+            </a>
+            <a href="{{ route('gestion.types-documents.export', request()->query()) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-excel"></i> Exporter
             </a>
             @if (\App\Support\ResourceAccess::can('types_documents', 'create'))
                 <a href="{{ route('gestion.types-documents.create') }}" class="btn btn-primary">
@@ -56,15 +59,15 @@
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th>Code</th>
-                    <th>Libellé</th>
-                    <th>Ordre</th>
-                    <th>Actif</th>
-                    <th>Secrétariat</th>
-                    <th>Champs diplôme</th>
-                    <th>Champs soutenance</th>
-                    <th>Semestre</th>
-                    <th>Documents</th>
+                    <x-th-triable cle="code" libelle="Code" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="libelle" libelle="Libellé" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="ordre" libelle="Ordre" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="actif" libelle="Actif" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="epingle_secretariat" libelle="Secrétariat" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="champs_diplome_actifs" libelle="Champs diplôme" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="champs_soutenance_actifs" libelle="Champs soutenance" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="champ_semestre_actif" libelle="Semestre" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
+                    <x-th-triable cle="documents_count" libelle="Documents" :tri-actuel="$triActuel" :direction-actuelle="$directionActuelle" route="gestion.types-documents.index" />
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>

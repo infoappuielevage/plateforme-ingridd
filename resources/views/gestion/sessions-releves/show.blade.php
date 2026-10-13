@@ -6,7 +6,10 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
         <h1 class="h3 mb-0">{{ $session->anneeAcademique->libelle }} — {{ $session->sessionLibelle() }}</h1>
-        <p class="text-muted small mb-0">{{ $session->cycleLibelle() }} — {{ $session->filiere->libelle }}</p>
+        <p class="text-muted small mb-0 d-flex align-items-center gap-2">
+            <span class="badge {{ $session->cycleBadgeClasse() }}">{{ $session->cycleLibelle() }}</span>
+            {{ $session->filiere->libelle }}
+        </p>
     </div>
     <a href="{{ route('gestion.sessions-releves.index') }}" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i> Retour
@@ -22,7 +25,7 @@
 @endif
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent"><i class="bi bi-card-text"></i> Description</div>
+    <div class="card-header header-primary d-flex align-items-center gap-2"><i class="bi bi-card-text"></i> Description</div>
     <div class="card-body">
         @if (\App\Support\ResourceAccess::can('sessions_releves', 'edit'))
             <form method="POST" action="{{ route('gestion.sessions-releves.update', $session->id) }}" class="d-flex flex-column gap-2">
@@ -57,15 +60,25 @@
      s'applique à cette session (Relevé coché + ce cycle). --}}
 @if ($supplementaires->isNotEmpty())
     <div class="card shadow-sm mb-3">
-        <div class="card-header bg-transparent"><i class="bi bi-file-earmark-plus"></i> Documents supplémentaires</div>
+        <div class="card-header header-accent d-flex align-items-center gap-2"><i class="bi bi-file-earmark-plus"></i> Documents supplémentaires</div>
         <div class="table-responsive">
             <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">Pièce</th>
+                        <th>Fichier</th>
+                        <th style="width: 220px;">Verrouillage</th>
+                    </tr>
+                </thead>
                 <tbody>
                     @foreach ($supplementaires as $fichier)
                         <tr>
                             <td style="width: 40%;">{{ $fichier->libelle() }}</td>
                             <td>
                                 @include('gestion.sessions-releves._case', ['fichier' => $fichier, 'peutModifier' => $peutModifier, 'peutSupprimer' => $peutSupprimer, 'session' => $session])
+                            </td>
+                            <td>
+                                @include('gestion.partials._verrou_document', ['document' => $fichier->document])
                             </td>
                         </tr>
                     @endforeach
@@ -92,17 +105,24 @@
 @endphp
 
 <div class="card shadow-sm mb-3">
-    <div class="card-header bg-transparent">
+    <div class="card-header header-success d-flex align-items-center gap-2">
         <i class="bi bi-journal-text"></i>
         {{ $session->cycle === \App\Models\SessionReleve::CYCLE_DOCTORAT ? 'Relevé par année de thèse' : 'Relevé par semestre' }}
     </div>
     <div class="table-responsive">
         <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th style="width: 40%;">Pièce</th>
+                    <th>Fichier</th>
+                    <th style="width: 220px;">Verrouillage</th>
+                </tr>
+            </thead>
             <tbody>
                 @forelse ($groupesNumerotees as $groupeLibelle => $items)
                     @if ($groupeLibelle !== '')
                         <tr class="table-light">
-                            <td colspan="2"><strong>{{ $groupeLibelle }}</strong></td>
+                            <td colspan="3"><strong>{{ $groupeLibelle }}</strong></td>
                         </tr>
                     @endif
                     @foreach ($items as $fichier)
@@ -111,11 +131,14 @@
                             <td>
                                 @include('gestion.sessions-releves._case', ['fichier' => $fichier, 'peutModifier' => $peutModifier, 'peutSupprimer' => $peutSupprimer, 'session' => $session])
                             </td>
+                            <td>
+                                @include('gestion.partials._verrou_document', ['document' => $fichier->document])
+                            </td>
                         </tr>
                     @endforeach
                 @empty
                     <tr>
-                        <td class="text-muted small py-3">Aucune case prévue pour ce cycle.</td>
+                        <td colspan="3" class="text-muted small py-3">Aucune case prévue pour ce cycle.</td>
                     </tr>
                 @endforelse
             </tbody>

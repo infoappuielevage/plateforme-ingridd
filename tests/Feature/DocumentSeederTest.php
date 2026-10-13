@@ -3,8 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Document;
+use App\Models\Etudiant;
 use App\Models\PvSoutenance;
 use App\Models\PvSoutenanceFichier;
+use App\Models\Reunion;
+use App\Models\ReunionFichier;
 use App\Models\SessionDeliberation;
 use App\Models\SessionDeliberationFichier;
 use App\Models\SessionReleve;
@@ -15,6 +18,7 @@ use Database\Seeders\FiliereSeeder;
 use Database\Seeders\NiveauSeeder;
 use Database\Seeders\SousTypeDocumentSeeder;
 use Database\Seeders\TypeDocumentSeeder;
+use Database\Seeders\TypePieceEtudiantSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -38,6 +42,7 @@ class DocumentSeederTest extends TestCase
         (new NiveauSeeder)->run();
         (new AnneeAcademiqueSeeder)->run();
         (new FiliereSeeder)->run();
+        (new TypePieceEtudiantSeeder)->run();
     }
 
     public function test_le_seeder_ne_genere_rien_sans_administrateur_ni_referentiels(): void
@@ -165,6 +170,53 @@ class DocumentSeederTest extends TestCase
         $this->assertGreaterThan(0, PvSoutenance::onlyTrashed()->count());
         $this->assertGreaterThan(0, SessionDeliberation::onlyTrashed()->count());
         $this->assertGreaterThan(0, SessionReleve::onlyTrashed()->count());
+
+        // Les PV de réunion existent eux aussi en tant qu'enregistrements
+        // dédiés (voir App\Models\Reunion, DocumentSeeder section 3quater) :
+        // chacun a sa case "rapport" remplie, et certains ont en plus une
+        // pièce jointe (liste en nombre libre, contrairement aux cases fixes
+        // des autres écrans dédiés).
+        $this->assertGreaterThan(0, Reunion::query()->count());
+
+        $reunion = Reunion::query()->with('fichiers.document')->firstOrFail();
+        $caseRapport = $reunion->fichiers->firstWhere('role', ReunionFichier::ROLE_RAPPORT);
+        $this->assertNotNull($caseRapport);
+        $this->assertNotNull($caseRapport->document_id);
+        $this->assertSame('PV_REUNION', $caseRapport->document->typeDocument->code);
+
+        $this->assertTrue(
+            Reunion::query()
+                ->whereHas('fichiers', fn ($q) => $q->where('role', ReunionFichier::ROLE_PIECE_JOINTE))
+                ->exists()
+        );
+
+        // Une réunion elle aussi dans sa propre corbeille.
+        $this->assertGreaterThan(0, Reunion::onlyTrashed()->count());
+
+        // Les dossiers étudiant existent eux aussi en tant qu'enregistrements
+        // dédiés (voir App\Models\Etudiant, DocumentSeeder section
+        // 3quinquies) : au moins un étudiant a DEUX inscriptions (progression
+        // d'un niveau à l'autre d'une année sur l'autre, demande explicite du
+        // client), et chacun a au moins une pièce déposée (acte de naissance).
+        $this->assertGreaterThan(0, Etudiant::query()->count());
+
+        $this->assertTrue(
+            Etudiant::query()->has('inscriptions', '>=', 2)->exists()
+        );
+
+        $etudiant = Etudiant::query()->with('fichiers.document.typeDocument')->firstOrFail();
+        $this->assertNotEmpty($etudiant->fichiers);
+        // Cherche explicitement une case REMPLIE plutôt que ->first() : la
+        // relation fichiers() n'a aucun ORDER BY explicite (voir son
+        // docblock), donc rien ne garantit que la PREMIÈRE case renvoyée par
+        // la base soit justement celle qui a été remplie — supposer sa
+        // position rendait ce test vulnérable à un aléa d'ordre de lecture.
+        $caseRemplie = $etudiant->fichiers->first(fn ($fichier) => $fichier->document_id !== null);
+        $this->assertNotNull($caseRemplie, 'Aucune case du dossier étudiant de démonstration n\'a de document rattaché.');
+        $this->assertSame('DOSSIER_ETUDIANT', $caseRemplie->document->typeDocument->code);
+
+        // Un dossier étudiant lui aussi dans sa propre corbeille.
+        $this->assertGreaterThan(0, Etudiant::onlyTrashed()->count());
     }
 
     public function test_le_seeder_ne_duplique_pas_sil_est_rejoue(): void
