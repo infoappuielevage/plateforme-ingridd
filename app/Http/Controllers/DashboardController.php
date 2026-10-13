@@ -7,6 +7,7 @@ use App\Models\Filiere;
 use App\Models\Role;
 use App\Models\TypeDocument;
 use App\Models\User;
+use App\Support\CorbeillesGlobales;
 use App\Support\Formatage;
 use App\Support\ResourceAccess;
 use App\Support\TypesDiplome;
@@ -107,7 +108,13 @@ class DashboardController extends Controller
                 ];
             }
 
-            if (ResourceAccess::can('documents', 'delete')) {
+            // Pour un non-admin, on garde EXACTEMENT l'ancien chiffre (documents
+            // génériques seulement) : lui donner le total toutes corbeilles
+            // confondues (CorbeillesGlobales::total(), voir ci-dessous)
+            // reviendrait à lui montrer des comptages d'écrans qu'il n'a pas
+            // forcément le droit de voir, alors que "documents" -> "Voir" ne
+            // couvre que les documents génériques.
+            if (ResourceAccess::can('documents', 'delete') && Auth::user()?->role !== User::ROLE_ADMIN) {
                 $enCorbeille = Document::onlyTrashed()->whereNotIn('type_document_id', TypesEcranDedie::ids())->count();
 
                 $cartes[] = [
@@ -118,6 +125,28 @@ class DashboardController extends Controller
                     'accent' => false,
                 ];
             }
+        }
+
+        // Carte "En corbeille" de l'administrateur — demande explicite du
+        // client ("le compteur du tableau de bord ne compte que les
+        // documents génériques, exclut tout le reste") : remplace, pour
+        // l'admin seulement, le chiffre ci-dessus par le VRAI total toutes
+        // corbeilles confondues (voir App\Support\CorbeillesGlobales), avec
+        // un lien direct vers le nouvel écran de détail plutôt que vers la
+        // seule corbeille "Documents". Indépendant de $peutVoirDocuments :
+        // un admin a de toute façon tous les droits, et ce chiffre couvre
+        // bien plus que les seuls documents.
+        if (Auth::user()?->role === User::ROLE_ADMIN) {
+            $enCorbeilleGlobale = CorbeillesGlobales::total();
+
+            $cartes[] = [
+                'label' => 'En corbeille',
+                'valeur' => $enCorbeilleGlobale,
+                'description' => $enCorbeilleGlobale > 0 ? 'À restaurer ou supprimer définitivement' : 'Toutes les corbeilles sont vides',
+                'icone' => 'bi-trash3',
+                'accent' => false,
+                'lien' => route('gestion.corbeilles.index'),
+            ];
         }
 
         $derniereSauvegarde = null;

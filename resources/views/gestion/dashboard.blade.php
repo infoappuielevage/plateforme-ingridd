@@ -150,16 +150,27 @@
 <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-4 stagger">
     @foreach ($cartes as $carte)
         <div class="col">
-            <div class="card stat-card {{ $carte['accent'] ? 'accent' : '' }} h-100">
-                <div class="card-body">
-                    <span class="stat-icon"><i class="bi {{ $carte['icone'] }}"></i></span>
-                    <div class="fs-3 fw-bold {{ ($carte['alerte'] ?? false) ? 'text-danger' : 'text-primary' }} count-up mt-2">{{ $carte['valeur'] }}</div>
-                    <div class="small text-muted">{{ $carte['label'] }}</div>
-                    @if ($carte['description'])
-                        <div class="small text-muted mt-1">{{ $carte['description'] }}</div>
-                    @endif
+            {{--
+                'lien' est optionnel (voir DashboardController::index()) : seule
+                la carte "En corbeille" de l'administrateur en fournit un
+                aujourd'hui, vers le nouvel écran Administration > Corbeilles.
+            --}}
+            @if (! empty($carte['lien']))
+                <a href="{{ $carte['lien'] }}" class="text-decoration-none d-block h-100">
+            @endif
+                <div class="card stat-card {{ $carte['accent'] ? 'accent' : '' }} h-100">
+                    <div class="card-body">
+                        <span class="stat-icon"><i class="bi {{ $carte['icone'] }}"></i></span>
+                        <div class="fs-3 fw-bold {{ ($carte['alerte'] ?? false) ? 'text-danger' : 'text-primary' }} count-up mt-2">{{ $carte['valeur'] }}</div>
+                        <div class="small text-muted">{{ $carte['label'] }}</div>
+                        @if ($carte['description'])
+                            <div class="small text-muted mt-1">{{ $carte['description'] }}</div>
+                        @endif
+                    </div>
                 </div>
-            </div>
+            @if (! empty($carte['lien']))
+                </a>
+            @endif
         </div>
     @endforeach
 

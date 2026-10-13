@@ -5,6 +5,7 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ChampSupplementaireController;
 use App\Http\Controllers\ContratController;
+use App\Http\Controllers\CorbeilleGlobaleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepenseController;
 use App\Http\Controllers\DocumentController;
@@ -664,6 +665,12 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::get('/', [SauvegardeController::class, 'index'])->name('index');
         Route::post('/', [SauvegardeController::class, 'store'])->name('store');
         Route::delete('/{nom}', [SauvegardeController::class, 'destroy'])->name('destroy');
+    });
+
+    // Corbeilles — vue d'ensemble de toutes les corbeilles de l'application
+    // (voir le docblock de App\Http\Controllers\CorbeilleGlobaleController).
+    Route::prefix('corbeilles')->name('corbeilles.')->group(function () {
+        Route::get('/', [CorbeilleGlobaleController::class, 'index'])->name('index');
     });
 
     // Rôles & permissions — réservé en dur au rôle admin (voir le docblock de

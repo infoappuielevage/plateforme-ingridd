@@ -328,6 +328,9 @@
                     <a href="{{ route('gestion.sauvegardes.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sauvegardes.*') ? 'active' : '' }}" title="Sauvegardes">
                         <i class="bi bi-cloud-arrow-up-fill"></i><span class="sidebar-label">Sauvegardes</span>
                     </a>
+                    <a href="{{ route('gestion.corbeilles.index') }}" class="sidebar-link {{ request()->routeIs('gestion.corbeilles.*') ? 'active' : '' }}" title="Corbeilles">
+                        <i class="bi bi-trash3-fill"></i><span class="sidebar-label">Corbeilles</span>
+                    </a>
                     <a href="{{ route('gestion.annonces.create') }}" class="sidebar-link {{ request()->routeIs('gestion.annonces.*') ? 'active' : '' }}" title="Annonces">
                         <i class="bi bi-megaphone-fill"></i><span class="sidebar-label">Annonces</span>
                     </a>
