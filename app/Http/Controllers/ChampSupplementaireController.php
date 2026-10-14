@@ -173,7 +173,7 @@ class ChampSupplementaireController extends Controller
 
     public function forceDestroy(int $id): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('champs_supplementaires', 'delete'), 403);
+        abort_unless(ResourceAccess::can('champs_supplementaires', 'delete_definitif'), 403);
 
         ChampSupplementaire::onlyTrashed()->findOrFail($id)->forceDelete();
 
@@ -188,7 +188,7 @@ class ChampSupplementaireController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('champs_supplementaires', 'delete'), 403);
+        abort_unless(ResourceAccess::can('champs_supplementaires', 'delete_definitif'), 403);
 
         $champs = ChampSupplementaire::onlyTrashed()->get();
 

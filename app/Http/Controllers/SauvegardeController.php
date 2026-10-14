@@ -26,6 +26,12 @@ use Illuminate\Support\Facades\Storage;
  * la page Filament d'origine : acceptable pour un volume de documents
  * raisonnable, voir le docblock d'origine pour la limite (hors périmètre de
  * cette v1 : passer par une file d'attente si le volume grossit trop).
+ *
+ * storeProjet() suit exactement le même principe pour le second type de
+ * sauvegarde (voir App\Console\Commands\CreerSauvegardeProjet, demande
+ * explicite du client : une archive du CODE du projet, en plus de celle-ci)
+ * — les deux apparaissent ensemble dans lister()/paginerListe(), distingués
+ * par leur préfixe de nom ("sauvegarde-" vs "projet-").
  */
 class SauvegardeController extends Controller
 {
@@ -80,6 +86,34 @@ class SauvegardeController extends Controller
         ]);
     }
 
+    /** Voir le docblock de la classe — même principe que store(), pour `ingridd:sauvegarde-projet`. */
+    public function storeProjet(): RedirectResponse
+    {
+        abort_unless(Auth::user()?->role === User::ROLE_ADMIN, 403);
+
+        try {
+            $code = Artisan::call('ingridd:sauvegarde-projet');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors([
+                'sauvegarde' => 'Erreur inattendue : '.$exception->getMessage(),
+            ]);
+        }
+
+        if ($code === 0) {
+            return back()->with('succes', 'Sauvegarde du projet créée.');
+        }
+
+        $sortie = trim(Artisan::output());
+
+        return back()->withErrors([
+            'sauvegarde' => $sortie !== ''
+                ? "Échec de la création de la sauvegarde du projet : {$sortie}"
+                : 'Échec de la création de la sauvegarde du projet.',
+        ]);
+    }
+
     public function destroy(string $nom): RedirectResponse
     {
         abort_unless(Auth::user()?->role === User::ROLE_ADMIN, 403);
@@ -94,7 +128,7 @@ class SauvegardeController extends Controller
         return back()->with('succes', 'Sauvegarde supprimée.');
     }
 
-    /** @return array<int, array{nom: string, taille: string, date: string, horodatage: int}> */
+    /** @return array<int, array{nom: string, taille: string, date: string, horodatage: int, type: string}> */
     protected function lister(): array
     {
         return collect(Storage::disk('sauvegardes')->files())
@@ -104,6 +138,12 @@ class SauvegardeController extends Controller
                 'taille' => Formatage::octets(Storage::disk('sauvegardes')->size($fichier)),
                 'date' => Carbon::createFromTimestamp(Storage::disk('sauvegardes')->lastModified($fichier))->format('d/m/Y H:i'),
                 'horodatage' => Storage::disk('sauvegardes')->lastModified($fichier),
+                // Distingue les deux types d'archives dans la liste (voir le
+                // docblock de la classe) — par préfixe de nom uniquement,
+                // aucune table en base pour ces fichiers (voir plus haut).
+                // Tout nom antérieur à l'ajout de "projet-" (ou déposé
+                // manuellement) reste classé "Données" par défaut.
+                'type' => str_starts_with($fichier, 'projet-') ? 'projet' : 'donnees',
             ])
             ->sortByDesc('horodatage')
             ->values()

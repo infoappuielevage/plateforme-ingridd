@@ -205,7 +205,7 @@ class RecetteScolariteController extends Controller
     /** Suppression définitive : met aussi à la corbeille chaque document encore attaché à une case, même raisonnement que les autres écrans dédiés. */
     public function forceDestroy(int $recetteScolarite): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
+        abort_unless(ResourceAccess::can('recettes', 'delete_definitif'), 403);
 
         $trouve = RecetteScolarite::onlyTrashed()->with('fichiers')->findOrFail($recetteScolarite);
 
@@ -227,7 +227,7 @@ class RecetteScolariteController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
+        abort_unless(ResourceAccess::can('recettes', 'delete_definitif'), 403);
 
         $dossiers = RecetteScolarite::onlyTrashed()->with('fichiers')->get();
 

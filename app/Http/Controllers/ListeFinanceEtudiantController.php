@@ -184,7 +184,7 @@ class ListeFinanceEtudiantController extends Controller
     /** Suppression définitive : met aussi à la corbeille chaque document encore attaché, même raisonnement que les autres écrans dédiés. */
     public function forceDestroy(int $listeFinanceEtudiant): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete_definitif'), 403);
 
         $trouve = ListeFinanceEtudiant::onlyTrashed()->with('fichiers')->findOrFail($listeFinanceEtudiant);
 
@@ -206,7 +206,7 @@ class ListeFinanceEtudiantController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete_definitif'), 403);
 
         $listes = ListeFinanceEtudiant::onlyTrashed()->with('fichiers')->get();
 

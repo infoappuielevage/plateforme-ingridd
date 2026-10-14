@@ -135,7 +135,13 @@
                             <tr>
                                 @foreach ($semaine as $index => $jour)
                                     <td class="{{ $jour && $jour['estAujourdhui'] ? 'ingridd-calendrier-aujourdhui' : (in_array($index, [5, 6], true) ? 'ingridd-calendrier-weekend' : '') }}">
-                                        {{ $jour['numero'] ?? '' }}
+                                        @if ($jour)
+                                            {{-- Pastille pleine (pas juste une teinte de fond sur la cellule,
+                                                 trop discrète — demande explicite du client, "j'aimerais que la
+                                                 date du jour soit remarquable, à coup d'oeil") : voir
+                                                 .ingridd-calendrier-jour-numero dans public/css/style.css. --}}
+                                            <span class="ingridd-calendrier-jour-numero">{{ $jour['numero'] }}</span>
+                                        @endif
                                     </td>
                                 @endforeach
                             </tr>

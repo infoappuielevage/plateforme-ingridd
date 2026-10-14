@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -68,6 +69,16 @@ class User extends Authenticatable
     public function estBloque(): bool
     {
         return ! is_null($this->bloque_at);
+    }
+
+    /**
+     * Sa conversation unique avec l'institution dans la messagerie (voir
+     * App\Models\Conversation et App\Http\Controllers\MessagerieController)
+     * — null tant qu'aucun administrateur ne lui a jamais écrit.
+     */
+    public function conversation(): HasOne
+    {
+        return $this->hasOne(Conversation::class, 'utilisateur_id');
     }
 
     /**

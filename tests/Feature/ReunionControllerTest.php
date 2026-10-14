@@ -554,4 +554,52 @@ class ReunionControllerTest extends TestCase
             ->post(route('gestion.reunions.corbeille.force-destroy-groupe'), ['reunions' => [$reunion->id]])
             ->assertForbidden();
     }
+
+    /**
+     * Le droit "Supprimer définitivement" (delete_definitif) est désormais
+     * distinct du droit "Supprimer" (delete) — demande explicite du client
+     * ("permission séparée pour la suppression définitive"), voir
+     * App\Support\ResourceAccess::ACTIONS. "delete" ne couvre plus que la
+     * mise à la corbeille/restauration (réversible) ; "delete_definitif"
+     * couvre la purge irréversible (force-destroy individuel/groupé, vider
+     * la corbeille). Un rôle avec "delete" mais sans "delete_definitif" peut
+     * donc toujours mettre à la corbeille/restaurer, mais reçoit un 403 sur
+     * toute suppression irréversible.
+     */
+    public function test_le_droit_delete_definitif_est_distinct_du_droit_delete(): void
+    {
+        Role::query()->create([
+            'slug' => 'reunions_sans_suppression_definitive',
+            'name' => 'Réunions sans suppression définitive',
+            'permissions' => ['reunions' => ['view' => true, 'delete' => true, 'delete_definitif' => false]],
+        ]);
+        $utilisateur = User::factory()->create(['role' => 'reunions_sans_suppression_definitive']);
+        $reunion = Reunion::factory()->create();
+
+        // Mise à la corbeille et restauration restent autorisées (droit "delete" toujours accordé).
+        $this->actingAs($utilisateur)
+            ->delete(route('gestion.reunions.destroy', $reunion->id))
+            ->assertRedirect();
+        $this->assertNotNull($reunion->fresh()->deleted_at);
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.reunions.restore', $reunion->id))
+            ->assertRedirect();
+        $this->assertNull($reunion->fresh()->deleted_at);
+
+        // Suppression définitive refusée (individuelle, groupée, vider la corbeille) — "delete_definitif" absent/false.
+        $reunion->delete();
+
+        $this->actingAs($utilisateur)
+            ->delete(route('gestion.reunions.force-destroy', $reunion->id))
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.reunions.corbeille.force-destroy-groupe'), ['reunions' => [$reunion->id]])
+            ->assertForbidden();
+
+        $this->actingAs($utilisateur)
+            ->delete(route('gestion.reunions.corbeille.vider'))
+            ->assertForbidden();
+    }
 }

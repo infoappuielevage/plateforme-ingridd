@@ -62,6 +62,19 @@ class ResourceAccess
         'create' => 'Créer',
         'edit' => 'Modifier',
         'delete' => 'Supprimer',
+        // Distinct de "delete" (demande explicite du client) : "delete" ne
+        // couvre plus que la mise à la corbeille/restauration (réversible),
+        // ce droit-ci couvre la purge irréversible (vider la corbeille,
+        // "Supprimer définitivement") — voir RoleController::valider() et
+        // gestion/roles/form.blade.php pour l'exception "depenses" (pas de
+        // corbeille propre, donc ce droit n'a pas de sens pour cette
+        // ressource) et les 17 contrôleurs dont les méthodes
+        // forceDestroy()/viderCorbeille() vérifient maintenant ce droit au
+        // lieu de "delete". Comme tout nouveau droit, les rôles existants en
+        // base n'ont pas cette clé dans leur JSON `permissions` : can() la
+        // traite donc comme false (désactivée) pour tout le monde sauf
+        // "admin" jusqu'à ce qu'un administrateur l'active explicitement.
+        'delete_definitif' => 'Supprimer définitivement',
     ];
 
     /**

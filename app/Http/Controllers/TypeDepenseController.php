@@ -151,7 +151,7 @@ class TypeDepenseController extends Controller
      */
     public function forceDestroy(int $id): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_depenses', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_depenses', 'delete_definitif'), 403);
 
         $type = TypeDepense::onlyTrashed()->findOrFail($id);
 
@@ -173,7 +173,7 @@ class TypeDepenseController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_depenses', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_depenses', 'delete_definitif'), 403);
 
         $types = TypeDepense::onlyTrashed()->with('depenses')->get();
 

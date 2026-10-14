@@ -343,7 +343,7 @@ class SessionDeliberationController extends Controller
      */
     public function forceDestroy(int $sessionDeliberation): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete_definitif'), 403);
 
         $session = SessionDeliberation::onlyTrashed()->with('fichiers')->findOrFail($sessionDeliberation);
 
@@ -369,7 +369,7 @@ class SessionDeliberationController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete_definitif'), 403);
 
         $sessions = SessionDeliberation::onlyTrashed()->with('fichiers')->get();
 
@@ -468,7 +468,7 @@ class SessionDeliberationController extends Controller
      */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete'), 403);
+        abort_unless(ResourceAccess::can('sessions_deliberation', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'sessions' => ['required', 'array', 'min:1'],

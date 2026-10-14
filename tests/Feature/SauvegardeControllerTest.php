@@ -131,4 +131,48 @@ class SauvegardeControllerTest extends TestCase
             ->delete(route('gestion.sauvegardes.destroy', ['nom' => '..\\.env']))
             ->assertForbidden();
     }
+
+    /** Voir le docblock de la classe : second type de sauvegarde, demande explicite du client ("une sauvegarde de tout le projet"). */
+    public function test_un_admin_peut_creer_une_sauvegarde_du_projet_depuis_lecran(): void
+    {
+        Storage::fake('sauvegardes');
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.sauvegardes.store-projet'))
+            ->assertRedirect();
+
+        $archives = collect(Storage::disk('sauvegardes')->files())
+            ->filter(fn (string $f) => str_starts_with($f, 'projet-') && str_ends_with($f, '.zip'));
+
+        $this->assertCount(1, $archives);
+    }
+
+    public function test_un_non_admin_ne_peut_pas_creer_une_sauvegarde_du_projet(): void
+    {
+        $utilisateur = User::factory()->gestionnaire()->create();
+
+        $this->actingAs($utilisateur)
+            ->post(route('gestion.sauvegardes.store-projet'))
+            ->assertForbidden();
+    }
+
+    /** La liste distingue les deux types par préfixe de nom (voir SauvegardeController::lister()). */
+    public function test_la_liste_distingue_les_sauvegardes_du_projet_des_sauvegardes_de_donnees(): void
+    {
+        Storage::fake('sauvegardes');
+        Storage::disk('sauvegardes')->put('sauvegarde-2026-01-01-000000-abcdef.zip', 'contenu');
+        Storage::disk('sauvegardes')->put('projet-2026-01-01-000000-abcdef.zip', 'contenu');
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('gestion.sauvegardes.index'))
+            ->assertOk()
+            ->assertViewHas('sauvegardes', function ($sauvegardes) {
+                $types = collect($sauvegardes->items())->pluck('type', 'nom');
+
+                return $types['sauvegarde-2026-01-01-000000-abcdef.zip'] === 'donnees'
+                    && $types['projet-2026-01-01-000000-abcdef.zip'] === 'projet';
+            });
+    }
 }

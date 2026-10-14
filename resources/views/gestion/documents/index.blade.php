@@ -29,7 +29,7 @@
             @endif
         @endif
 
-        @if ($corbeille && $corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('documents', 'delete'))
+        @if ($corbeille && $corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('documents', 'delete_definitif'))
             <form method="POST" action="{{ route('gestion.documents.corbeille.vider') }}" class="d-inline"
                   onsubmit="return confirm('Tous les documents actuellement dans la corbeille seront supprimés définitivement, avec leur fichier. Cette action est irréversible. Continuer ?');">
                 @csrf
@@ -116,7 +116,20 @@
     </form>
 </div>
 
-@php $peutSupprimer = \App\Support\ResourceAccess::can('documents', 'delete'); @endphp
+@php
+    // Deux droits désormais distincts (demande explicite du client) : "Supprimer"
+    // ne couvre plus que la mise à la corbeille/restauration (réversible),
+    // "Supprimer définitivement" (voir App\Support\ResourceAccess::ACTIONS)
+    // couvre la purge irréversible (vider la corbeille, bouton "Supprimer
+    // définitivement"). $peutSupprimer reste la "ou" des deux : elle ne
+    // gouverne plus que l'affichage de la colonne de sélection / de la barre
+    // d'actions groupées (utile dès que l'un des deux droits est accordé),
+    // chaque bouton à l'intérieur étant ensuite gated par le droit précis
+    // qui lui correspond.
+    $peutMettreCorbeille = \App\Support\ResourceAccess::can('documents', 'delete');
+    $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('documents', 'delete_definitif');
+    $peutSupprimer = $peutMettreCorbeille || $peutSupprimerDefinitivement;
+@endphp
 
 @if ($peutSupprimer)
     {{-- Formulaire "porteur" de la sélection groupée : vide, sans rendu visuel.
@@ -135,21 +148,27 @@
         <span><strong id="compteurSelectionDocuments">0</strong> document(s) sélectionné(s)</span>
         <div class="d-flex gap-2">
             @if (! $corbeille)
-                <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille-groupee') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Mettre les documents sélectionnés à la corbeille ?');">
-                    <i class="bi bi-trash3"></i> Mettre à la corbeille
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille-groupee') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Mettre les documents sélectionnés à la corbeille ?');">
+                        <i class="bi bi-trash3"></i> Mettre à la corbeille
+                    </button>
+                @endif
             @else
-                <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille.restaurer-groupe') }}"
-                        class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
-                </button>
-                <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille.force-destroy-groupe') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Supprimer définitivement les documents sélectionnés ? Cette action est irréversible.');">
-                    <i class="bi bi-x-circle"></i> Supprimer définitivement
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille.restaurer-groupe') }}"
+                            class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                    </button>
+                @endif
+                @if ($peutSupprimerDefinitivement)
+                    <button type="submit" form="formSelectionDocuments" formaction="{{ route('gestion.documents.corbeille.force-destroy-groupe') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Supprimer définitivement les documents sélectionnés ? Cette action est irréversible.');">
+                        <i class="bi bi-x-circle"></i> Supprimer définitivement
+                    </button>
+                @endif
             @endif
         </div>
     </div>
@@ -244,7 +263,7 @@
                                         </a>
                                     @endif
 
-                                    @if (\App\Support\ResourceAccess::can('documents', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.documents.destroy', $document) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre ce document à la corbeille ?');">
                                             @csrf
@@ -255,14 +274,16 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('documents', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.documents.restore', $document->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
 
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.documents.force-destroy', $document->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ce document ? Cette action est irréversible.');">
                                             @csrf

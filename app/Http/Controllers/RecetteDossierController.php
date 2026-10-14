@@ -217,7 +217,7 @@ class RecetteDossierController extends Controller
     /** Suppression définitive : met aussi à la corbeille chaque document encore attaché, même raisonnement que les autres écrans dédiés. */
     public function forceDestroy(string $type, int $dossier): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
+        abort_unless(ResourceAccess::can('recettes', 'delete_definitif'), 403);
         $typeInterne = $this->resoudreType($type);
 
         $trouve = RecetteDossier::onlyTrashed()->with('fichiers')->findOrFail($dossier);
@@ -242,7 +242,7 @@ class RecetteDossierController extends Controller
      */
     public function viderCorbeille(string $type): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
+        abort_unless(ResourceAccess::can('recettes', 'delete_definitif'), 403);
         $typeInterne = $this->resoudreType($type);
 
         $dossiers = RecetteDossier::onlyTrashed()->with('fichiers')->where('type', $typeInterne)->get();

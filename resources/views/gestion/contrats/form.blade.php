@@ -1,11 +1,30 @@
 @extends('layouts.gestion')
 
-@section('title', ($contrat ? 'Modifier — ' : 'Nouveau — ').$typeContrat->libelle)
+@section('title', $contrat ? 'Modifier — '.$typeContrat->libelle : 'Nouveau contrat')
 
 @section('content')
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <h1 class="h3 mb-0">{{ $contrat ? 'Modifier le contrat' : 'Nouveau contrat' }} — {{ $typeContrat->libelle }}</h1>
-    <a href="{{ $contrat ? route('gestion.contrats.show', ['typeContrat' => $typeContrat->code, 'contrat' => $contrat->id]) : route('gestion.contrats.index', ['typeContrat' => $typeContrat->code]) }}" class="btn btn-outline-secondary">
+    {{--
+        Le titre n'affiche la catégorie qu'à la modification : à la
+        création, la catégorie se choisit désormais dans le menu déroulant
+        "Type de contrat" ci-dessous plutôt que d'être figée par l'onglet
+        d'origine — l'afficher ici laisserait penser qu'elle est déjà
+        fixée.
+    --}}
+    <h1 class="h3 mb-0">{{ $contrat ? 'Modifier le contrat — '.$typeContrat->libelle : 'Nouveau contrat' }}</h1>
+    {{--
+        À la modification, "Retour" renvoie vers la fiche du contrat (sa
+        catégorie est fixe, donc sans ambiguïté). À la création en revanche,
+        $typeContrat n'est plus qu'une présélection du menu déroulant
+        "Type de contrat" ci-dessous — reprendre la même route que le
+        bouton "Nouveau contrat" (la catégorie de l'onglet de départ)
+        pourrait ramener vers une catégorie DIFFÉRENTE de celle choisie
+        juste avant d'annuler, ce qui a été signalé par le client comme
+        trompeur. "Retour" renvoie donc vers "Tous les contrats"
+        (gestion.contrats.tous), point d'entrée générique cohérent quelle
+        que soit la catégorie finalement sélectionnée dans le formulaire.
+    --}}
+    <a href="{{ $contrat ? route('gestion.contrats.show', ['typeContrat' => $typeContrat->code, 'contrat' => $contrat->id]) : route('gestion.contrats.tous') }}" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i> Retour
     </a>
 </div>
@@ -37,6 +56,33 @@
         <div class="card-header header-primary d-flex align-items-center gap-2"><i class="bi bi-vector-pen"></i> Informations générales</div>
         <div class="card-body">
             <div class="row g-3">
+                {{--
+                    Menu déroulant "Type de contrat" — demande explicite du
+                    client ("le formulaire pour enregistrer un contrat doit
+                    permettre de sélectionner le type de contrat") : jusqu'ici,
+                    la catégorie était uniquement celle de l'onglet d'où
+                    "Nouveau contrat" avait été ouvert, sans rien à l'écran
+                    pour la changer — pratique notamment depuis l'écran
+                    "Tous les contrats" (gestion/contrats/tous.blade.php), qui
+                    n'a justement plus de catégorie unique de départ. Affiché
+                    UNIQUEMENT à la création ($contrat === null) : la
+                    catégorie n'est pas modifiable après coup (voir
+                    ContratController::store()), contrairement aux autres
+                    champs de ce formulaire — elle structure l'URL/les
+                    onglets de tout cet écran plutôt que d'être un simple
+                    champ métier.
+                --}}
+                @if (! $contrat)
+                    <div class="col-md-6">
+                        <label class="form-label">Type de contrat <span class="text-danger">*</span></label>
+                        <select name="type_contrat_id" class="form-select" required>
+                            @foreach ($categories as $categorie)
+                                <option value="{{ $categorie->id }}" @selected((int) old('type_contrat_id', $typeContrat->id) === $categorie->id)>{{ $categorie->libelle }}</option>
+                            @endforeach
+                        </select>
+                        <div class="form-text">Non modifiable après la création du contrat.</div>
+                    </div>
+                @endif
                 <div class="col-md-6">
                     <label class="form-label">Partenaire / Prestataire <span class="text-danger">*</span></label>
                     <input type="text" name="partenaire_prestataire" class="form-control" maxlength="200"

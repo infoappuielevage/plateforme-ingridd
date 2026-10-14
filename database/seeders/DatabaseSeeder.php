@@ -15,6 +15,7 @@ use Illuminate\Database\Seeder;
  *
  *     php artisan db:seed --class=UserSeeder
  *     php artisan db:seed --class=DocumentSeeder
+ *     php artisan db:seed --class=GestionFinanciereDemoSeeder
  *     php artisan db:seed --class=ChampSupplementaireSeeder
  *     php artisan db:seed --class=SauvegardeDemoSeeder
  *
@@ -23,6 +24,12 @@ use Illuminate\Database\Seeder;
  * - DocumentSeeder : documents/étudiants/PV/sessions/réunions de
  *   démonstration, pour que le tableau de bord et les listes montrent
  *   immédiatement quelque chose de parlant.
+ * - GestionFinanciereDemoSeeder : Contrats/États financiers/Recettes
+ *   (Scolarité et Dossier)/Listes des étudiants (finances) de
+ *   démonstration — les modules arrivés après DocumentSeeder, qu'il ne
+ *   couvre pas (voir son propre docblock). Dépenses s'alimente déjà seule
+ *   (voir TypeDepenseSeeder) : ce seeder se contente d'y déposer quelques
+ *   fichiers.
  * - ChampSupplementaireSeeder : quelques champs supplémentaires d'exemple
  *   (à lancer APRÈS DocumentSeeder pour qu'il ait des sessions/PV existants
  *   à rétro-synchroniser).

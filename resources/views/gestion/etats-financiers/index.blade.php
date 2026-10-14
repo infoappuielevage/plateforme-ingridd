@@ -15,7 +15,7 @@
             <a href="{{ route('gestion.etats-financiers.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('etats_financiers', 'delete'))
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('etats_financiers', 'delete_definitif'))
                 <form method="POST" action="{{ route('gestion.etats-financiers.corbeille.vider') }}" class="d-inline"
                       onsubmit="return confirm('Tous les états financiers actuellement dans la corbeille seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +26,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('etats_financiers', 'delete'))
+            @if (\App\Support\ResourceAccess::can('etats_financiers', 'delete') || \App\Support\ResourceAccess::can('etats_financiers', 'delete_definitif'))
                 <a href="{{ route('gestion.etats-financiers.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -52,7 +52,13 @@
     <div class="alert alert-success">{{ session('succes') }}</div>
 @endif
 
-@php $peutSupprimerEtatsFinanciers = \App\Support\ResourceAccess::can('etats_financiers', 'delete'); @endphp
+@php
+    // Deux droits désormais distincts (demande explicite du client) : voir
+    // le commentaire équivalent dans champs-supplementaires/index.blade.php.
+    $peutMettreCorbeille = \App\Support\ResourceAccess::can('etats_financiers', 'delete');
+    $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('etats_financiers', 'delete_definitif');
+    $peutSupprimerEtatsFinanciers = $peutMettreCorbeille || $peutSupprimerDefinitivement;
+@endphp
 
 @if ($peutSupprimerEtatsFinanciers)
     {{-- Formulaire "porteur" de la sélection groupée — même principe que resources/views/gestion/reunions/index.blade.php. --}}
@@ -64,21 +70,27 @@
         <span><strong id="compteurSelectionEtatsFinanciers">0</strong> élément(s) sélectionné(s)</span>
         <div class="d-flex gap-2">
             @if (! $corbeille)
-                <button type="submit" form="formSelectionEtatsFinanciers" formaction="{{ route('gestion.etats-financiers.corbeille-groupee') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Mettre les états financiers sélectionnés à la corbeille ?');">
-                    <i class="bi bi-trash3"></i> Mettre à la corbeille
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionEtatsFinanciers" formaction="{{ route('gestion.etats-financiers.corbeille-groupee') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Mettre les états financiers sélectionnés à la corbeille ?');">
+                        <i class="bi bi-trash3"></i> Mettre à la corbeille
+                    </button>
+                @endif
             @else
-                <button type="submit" form="formSelectionEtatsFinanciers" formaction="{{ route('gestion.etats-financiers.corbeille.restaurer-groupe') }}"
-                        class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
-                </button>
-                <button type="submit" form="formSelectionEtatsFinanciers" formaction="{{ route('gestion.etats-financiers.corbeille.force-destroy-groupe') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Supprimer définitivement les éléments sélectionnés ? Cette action est irréversible.');">
-                    <i class="bi bi-x-circle"></i> Supprimer définitivement
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionEtatsFinanciers" formaction="{{ route('gestion.etats-financiers.corbeille.restaurer-groupe') }}"
+                            class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                    </button>
+                @endif
+                @if ($peutSupprimerDefinitivement)
+                    <button type="submit" form="formSelectionEtatsFinanciers" formaction="{{ route('gestion.etats-financiers.corbeille.force-destroy-groupe') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Supprimer définitivement les éléments sélectionnés ? Cette action est irréversible.');">
+                        <i class="bi bi-x-circle"></i> Supprimer définitivement
+                    </button>
+                @endif
             @endif
         </div>
     </div>
@@ -135,7 +147,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can('etats_financiers', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.etats-financiers.destroy', $item->id) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre cet état financier à la corbeille ?');">
                                             @csrf
@@ -146,13 +158,16 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('etats_financiers', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.etats-financiers.restore', $item->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.etats-financiers.force-destroy', $item->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

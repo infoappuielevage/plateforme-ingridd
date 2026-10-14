@@ -303,7 +303,7 @@ class SessionReleveController extends Controller
 
     public function forceDestroy(int $sessionReleve): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete_definitif'), 403);
 
         $session = SessionReleve::onlyTrashed()->with('fichiers')->findOrFail($sessionReleve);
 
@@ -327,7 +327,7 @@ class SessionReleveController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete_definitif'), 403);
 
         $sessions = SessionReleve::onlyTrashed()->with('fichiers')->get();
 
@@ -426,7 +426,7 @@ class SessionReleveController extends Controller
      */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
+        abort_unless(ResourceAccess::can('sessions_releves', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'sessions' => ['required', 'array', 'min:1'],

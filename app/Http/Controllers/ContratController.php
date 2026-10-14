@@ -143,6 +143,116 @@ class ContratController extends Controller
         ];
     }
 
+    /**
+     * "Tous les contrats" — vue d'ensemble TOUTES CATÉGORIES confondues
+     * (demande explicite du client, "ajoute un autre tableau pour tout les
+     * contrat"), en plus des listes par catégorie ci-dessus. Volontairement
+     * en LECTURE/NAVIGATION seule — pas de corbeille ni d'actions groupées
+     * ici : chaque ligne renvoie vers la fiche du contrat dans SA catégorie
+     * (gestion.contrats.show), où toutes les actions habituelles
+     * (modifier/mettre à la corbeille/restaurer/supprimer définitivement)
+     * restent disponibles. Garder ces actions UNIQUEMENT sur les écrans par
+     * catégorie évite de dupliquer toute la logique de corbeille déjà
+     * gérée par destroy()/restore()/forceDestroy() ci-dessous, qui reste
+     * structurée par catégorie (route `{typeContrat:code}`).
+     */
+    public function tous(Request $request): View
+    {
+        $contrats = $this->requeteListeTous($request)->paginate(8)->withQueryString();
+
+        [$triActuel, $directionActuelle] = $this->resoudreTri($request, $this->colonnesTriablesTous(), 'created_at', 'desc');
+
+        return view('gestion.contrats.tous', [
+            'categories' => $this->categoriesActives(),
+            'contrats' => $contrats,
+            'statuts' => Contrat::STATUTS,
+            'triActuel' => $triActuel,
+            'directionActuelle' => $directionActuelle,
+        ]);
+    }
+
+    /** Export Excel (.xlsx) de "Tous les contrats" — mêmes filtres que l'écran (voir requeteListeTous()), sans pagination. */
+    public function exportTous(Request $request): StreamedResponse
+    {
+        $contrats = $this->requeteListeTous($request)->get();
+
+        $lignes = $contrats->map(fn (Contrat $contrat) => [
+            $contrat->typeContrat?->libelle,
+            $contrat->partenaire_prestataire,
+            $contrat->objet,
+            $contrat->montantFormate(),
+            $contrat->date_signature?->format('d/m/Y'),
+            $contrat->date_debut?->format('d/m/Y'),
+            $contrat->date_fin?->format('d/m/Y'),
+            $contrat->statutLibelle(),
+            $contrat->responsable?->name,
+        ]);
+
+        return FichiersExcel::exporter(
+            'contrats-tous-'.now()->format('Y-m-d').'.xlsx',
+            ['Catégorie', 'Partenaire / Prestataire', 'Objet', 'Montant', 'Date de signature', 'Date de début', 'Date de fin', 'Statut', 'Responsable'],
+            $lignes
+        );
+    }
+
+    /**
+     * MÊME PRINCIPE que requeteListe() ci-dessus, sans le filtre
+     * `type_contrat_id` (toutes catégories) et avec un filtre "catégorie"
+     * en plus (voir gestion/contrats/tous.blade.php) — pas de corbeille ici
+     * (voir le docblock de tous() ci-dessus).
+     *
+     * @return \Illuminate\Database\Eloquent\Builder<Contrat>
+     */
+    protected function requeteListeTous(Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = Contrat::query()
+            ->with(['typeContrat', 'responsable', 'fichiers'])
+            ->when($request->filled('categorie'), function ($q) use ($request) {
+                $q->whereHas('typeContrat', fn ($qq) => $qq->where('code', $request->string('categorie')));
+            })
+            ->when($request->filled('statut'), fn ($q) => $q->where('statut', $request->string('statut')))
+            ->when($request->filled('recherche'), function ($q) use ($request) {
+                $terme = $request->string('recherche');
+                $q->where(fn ($qq) => $qq->where('partenaire_prestataire', 'like', "%{$terme}%")
+                    ->orWhere('objet', 'like', "%{$terme}%"));
+            });
+
+        $this->appliquerTri($query, $this->colonnesTriablesTous(), $this->resoudreTri($request, $this->colonnesTriablesTous(), 'created_at', 'desc'));
+
+        return $query;
+    }
+
+    /**
+     * MÊME PRINCIPE que colonnesTriables() ci-dessus, avec "catégorie" en
+     * plus (tri via jointure sur `types_contrats.libelle` — nécessite un
+     * `select('contrats.*')` explicite pour éviter toute collision de
+     * colonnes entre les deux tables jointes, ex. `id`).
+     *
+     * @return array<string, string|\Closure>
+     */
+    protected function colonnesTriablesTous(): array
+    {
+        return [
+            'categorie' => function ($query, string $direction) {
+                $query->join('types_contrats', 'types_contrats.id', '=', 'contrats.type_contrat_id')
+                    ->orderBy('types_contrats.libelle', $direction)
+                    ->select('contrats.*');
+            },
+            'partenaire_prestataire' => 'partenaire_prestataire',
+            'objet' => 'objet',
+            'montant' => 'montant',
+            'date_signature' => 'date_signature',
+            'date_debut' => 'date_debut',
+            'date_fin' => 'date_fin',
+            'statut' => 'statut',
+            'created_at' => 'created_at',
+            'fichiers_deposes' => function ($query, string $direction) {
+                $query->withCount(['fichiers as fichiers_deposes_count' => fn ($q) => $q->whereNotNull('document_id')])
+                    ->orderBy('fichiers_deposes_count', $direction);
+            },
+        ];
+    }
+
     public function create(TypeContrat $typeContrat): View
     {
         abort_unless(ResourceAccess::can('contrats', 'create'), 403);
@@ -150,6 +260,7 @@ class ContratController extends Controller
 
         return view('gestion.contrats.form', [
             'typeContrat' => $typeContrat,
+            'categories' => $this->categoriesActives(),
             'contrat' => null,
             'statuts' => Contrat::STATUTS,
             'responsablesPossibles' => $this->responsablesPossibles(),
@@ -161,8 +272,25 @@ class ContratController extends Controller
         abort_unless(ResourceAccess::can('contrats', 'create'), 403);
         abort_if(! $typeContrat->actif, 404);
 
+        // Catégorie choisie DANS LE FORMULAIRE (menu déroulant "Type de
+        // contrat", voir gestion/contrats/form.blade.php) — demande
+        // explicite du client ("le formulaire pour enregistrer un contrat
+        // doit permettre de sélectionner le type de contrat") : avant ce
+        // changement, la catégorie était uniquement celle de l'onglet d'où
+        // "Nouveau contrat" avait été ouvert. $typeContrat (lié par l'URL)
+        // ne sert plus qu'à savoir où revenir en cas d'erreur de validation
+        // et à présélectionner le menu déroulant — c'est la valeur soumise
+        // ici qui est réellement enregistrée. Validée à part (plutôt que
+        // dans valider(), partagée avec update()) : la catégorie n'est PAS
+        // modifiable après création, contrairement aux autres champs —
+        // c'est une dimension structurante de l'URL/l'organisation de cet
+        // écran (onglets), pas un simple champ métier comme les autres.
+        $categorie = $request->validate([
+            'type_contrat_id' => ['required', Rule::exists('types_contrats', 'id')->where('actif', true)],
+        ]);
+
         $donnees = $this->valider($request);
-        $donnees['type_contrat_id'] = $typeContrat->id;
+        $donnees['type_contrat_id'] = $categorie['type_contrat_id'];
         $donnees['created_by'] = Auth::id();
 
         $contrat = DB::transaction(function () use ($donnees) {
@@ -172,8 +300,10 @@ class ContratController extends Controller
             return $contrat;
         });
 
+        $categorieChoisie = TypeContrat::query()->find($categorie['type_contrat_id']);
+
         return redirect()
-            ->route('gestion.contrats.show', ['typeContrat' => $typeContrat->code, 'contrat' => $contrat])
+            ->route('gestion.contrats.show', ['typeContrat' => $categorieChoisie->code, 'contrat' => $contrat])
             ->with('succes', 'Contrat créé. Vous pouvez maintenant y déposer le contrat signé et d\'éventuels avenants.');
     }
 
@@ -286,7 +416,7 @@ class ContratController extends Controller
     /** Suppression définitive : supprime aussi (mise à la corbeille) chaque Document encore attaché, même raisonnement que les autres écrans dédiés. */
     public function forceDestroy(TypeContrat $typeContrat, int $contrat): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('contrats', 'delete'), 403);
+        abort_unless(ResourceAccess::can('contrats', 'delete_definitif'), 403);
 
         $trouve = Contrat::onlyTrashed()->with('fichiers')->findOrFail($contrat);
         abort_if($trouve->type_contrat_id !== $typeContrat->id, 404);
@@ -311,7 +441,7 @@ class ContratController extends Controller
      */
     public function viderCorbeille(TypeContrat $typeContrat): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('contrats', 'delete'), 403);
+        abort_unless(ResourceAccess::can('contrats', 'delete_definitif'), 403);
 
         $contrats = Contrat::onlyTrashed()->with('fichiers')->where('type_contrat_id', $typeContrat->id)->get();
 
@@ -399,7 +529,7 @@ class ContratController extends Controller
 
     public function forceDestroyGroupe(Request $request, TypeContrat $typeContrat): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('contrats', 'delete'), 403);
+        abort_unless(ResourceAccess::can('contrats', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'contrats' => ['required', 'array', 'min:1'],

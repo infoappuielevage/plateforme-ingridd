@@ -10,12 +10,18 @@
             Les catégories affichées en onglet sur l'écran Gestion des contrats{{ $corbeille ? ' — corbeille' : '' }}.
         </p>
     </div>
+    @php
+        // Deux droits désormais distincts (demande explicite du client) :
+        // voir le commentaire équivalent dans champs-supplementaires/index.blade.php.
+        $peutMettreCorbeille = \App\Support\ResourceAccess::can('types_contrats', 'delete');
+        $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('types_contrats', 'delete_definitif');
+    @endphp
     <div class="d-flex gap-2">
         @if ($corbeille)
             <a href="{{ route('gestion.types-contrats.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('types_contrats', 'delete'))
+            @if ($corbeillePeutEtreVidee && $peutSupprimerDefinitivement)
                 <form method="POST" action="{{ route('gestion.types-contrats.corbeille.vider') }}" class="d-inline"
                       onsubmit="return confirm('Toutes les catégories de contrat actuellement dans la corbeille seront supprimées définitivement (celles encore utilisées seront ignorées). Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +32,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('types_contrats', 'delete'))
+            @if ($peutMettreCorbeille || $peutSupprimerDefinitivement)
                 <a href="{{ route('gestion.types-contrats.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -81,7 +87,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can('types_contrats', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.types-contrats.destroy', $type->id) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre cette catégorie à la corbeille ?');">
                                             @csrf
@@ -92,13 +98,15 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('types_contrats', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.types-contrats.restore', $type->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.types-contrats.force-destroy', $type->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

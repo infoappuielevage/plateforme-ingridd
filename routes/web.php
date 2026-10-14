@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\AnnonceController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ChampSupplementaireController;
@@ -12,6 +11,7 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\EtatFinancierController;
 use App\Http\Controllers\EtudiantController;
 use App\Http\Controllers\ListeFinanceEtudiantController;
+use App\Http\Controllers\MessagerieController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ParametresController;
 use App\Http\Controllers\ProfilController;
@@ -543,6 +543,18 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
     // structure que "reunions" plus haut, simplement préfixée par l'onglet
     // de catégorie.
     Route::prefix('contrats')->name('contrats.')->group(function () {
+        // "Tous les contrats" — vue d'ensemble TOUTES CATÉGORIES confondues
+        // (demande explicite du client, "ajoute un autre tableau pour tout
+        // les contrat") : simple consultation/navigation (pas d'actions de
+        // suppression/restauration groupées ici, pour ne pas dupliquer toute
+        // la logique de corbeille par catégorie déjà gérée par index()
+        // ci-dessous) — chaque ligne renvoie vers la fiche du contrat dans
+        // SA catégorie, où toutes les actions habituelles restent
+        // disponibles. Déclarée AVANT "/{typeContrat:code}" pour que "tous"
+        // ne soit jamais pris pour un code de catégorie — même raison que
+        // "corbeille" plus bas (voir le commentaire sur "types-contrats").
+        Route::get('/tous', [ContratController::class, 'tous'])->name('tous');
+        Route::get('/tous/export', [ContratController::class, 'exportTous'])->name('tous.export');
         Route::get('/{typeContrat:code}', [ContratController::class, 'index'])->name('index');
         Route::get('/{typeContrat:code}/creer', [ContratController::class, 'create'])->name('create');
         Route::post('/{typeContrat:code}', [ContratController::class, 'store'])->name('store');
@@ -704,6 +716,10 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
     Route::prefix('sauvegardes')->name('sauvegardes.')->group(function () {
         Route::get('/', [SauvegardeController::class, 'index'])->name('index');
         Route::post('/', [SauvegardeController::class, 'store'])->name('store');
+        // Sauvegarde du PROJET (code source) — voir le docblock de
+        // SauvegardeController::storeProjet() et de App\Console\Commands\
+        // CreerSauvegardeProjet.
+        Route::post('/projet', [SauvegardeController::class, 'storeProjet'])->name('store-projet');
         Route::delete('/{nom}', [SauvegardeController::class, 'destroy'])->name('destroy');
     });
 
@@ -740,11 +756,22 @@ Route::middleware(['web', 'auth'])->prefix('gestion')->name('gestion.')->group(f
         Route::post('/{utilisateur}/reinitialiser-mot-de-passe', [UserController::class, 'reinitialiserMotDePasse'])->name('reinitialiser-mot-de-passe');
     });
 
-    // Annonces — réservé en dur au rôle admin (voir le docblock de
-    // App\Http\Controllers\AnnonceController).
-    Route::prefix('annonces')->name('annonces.')->group(function () {
-        Route::get('/', [AnnonceController::class, 'create'])->name('create');
-        Route::post('/', [AnnonceController::class, 'store'])->name('store');
+    // Messagerie — voir le docblock de App\Http\Controllers\MessagerieController.
+    // "nouveau" et "non-lus/nombre" restent réservés en dur au rôle admin
+    // (gérés dans le contrôleur) ; les routes avec {conversation} sont
+    // ouvertes à tout utilisateur connecté mais vérifient dans le
+    // contrôleur qu'il s'agit bien de SA conversation (ou qu'il est admin).
+    Route::prefix('messagerie')->name('messagerie.')->group(function () {
+        Route::get('/', [MessagerieController::class, 'index'])->name('index');
+        Route::get('/nouveau', [MessagerieController::class, 'nouveau'])->name('nouveau');
+        Route::post('/nouveau', [MessagerieController::class, 'envoyerNouveau'])->name('envoyer-nouveau');
+        // Avant "/{conversation}" ci-dessous : "non-lus" ne doit jamais être
+        // interprété comme un id de conversation (même raisonnement que
+        // "corbeille/vider" avant "/{document}" sur DocumentController).
+        Route::get('/non-lus/nombre', [MessagerieController::class, 'nombreNonLus'])->name('nombre-non-lus');
+        Route::get('/{conversation}', [MessagerieController::class, 'afficher'])->name('afficher');
+        Route::get('/{conversation}/messages-recents', [MessagerieController::class, 'messagesRecents'])->name('messages-recents');
+        Route::post('/{conversation}', [MessagerieController::class, 'repondre'])->name('repondre');
     });
 });
 

@@ -207,7 +207,9 @@
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
 
+                                    @if (\App\Support\ResourceAccess::can('documents', 'delete_definitif'))
                                         <form method="POST" action="{{ route('gestion.documents.force-destroy', $document->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ce document ? Cette action est irréversible.');">
                                             @csrf

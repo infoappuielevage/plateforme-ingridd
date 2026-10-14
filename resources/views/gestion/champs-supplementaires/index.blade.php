@@ -10,12 +10,23 @@
             Documents propres, ajoutables aux PV de délibération et/ou aux Relevés de notes sans toucher au code{{ $corbeille ? ' — corbeille' : '' }}.
         </p>
     </div>
+    @php
+        // Deux droits désormais distincts (demande explicite du client) :
+        // "Supprimer" ne couvre plus que la mise à la corbeille (réversible),
+        // "Supprimer définitivement" (voir App\Support\ResourceAccess::ACTIONS)
+        // couvre la suppression irréversible (vider la corbeille, supprimer
+        // définitivement une ligne). Le lien "Corbeille" reste visible dès
+        // que l'un des deux est accordé — utile même à un rôle qui ne peut
+        // QUE purger, sans jamais mettre lui-même à la corbeille.
+        $peutMettreCorbeille = \App\Support\ResourceAccess::can('champs_supplementaires', 'delete');
+        $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('champs_supplementaires', 'delete_definitif');
+    @endphp
     <div class="d-flex gap-2">
         @if ($corbeille)
             <a href="{{ route('gestion.champs-supplementaires.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('champs_supplementaires', 'delete'))
+            @if ($corbeillePeutEtreVidee && $peutSupprimerDefinitivement)
                 <form method="POST" action="{{ route('gestion.champs-supplementaires.corbeille.vider') }}" class="d-inline"
                       onsubmit="return confirm('Tous les champs supplémentaires actuellement dans la corbeille seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +37,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('champs_supplementaires', 'delete'))
+            @if ($peutMettreCorbeille || $peutSupprimerDefinitivement)
                 <a href="{{ route('gestion.champs-supplementaires.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -87,7 +98,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can('champs_supplementaires', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.champs-supplementaires.destroy', $champ->id) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre ce champ supplémentaire à la corbeille ?');">
                                             @csrf
@@ -98,13 +109,15 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('champs_supplementaires', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.champs-supplementaires.restore', $champ->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.champs-supplementaires.force-destroy', $champ->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

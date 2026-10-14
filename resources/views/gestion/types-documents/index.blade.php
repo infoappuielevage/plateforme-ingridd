@@ -10,12 +10,18 @@
             Référentiel{{ $corbeille ? ' — corbeille' : '' }}.
         </p>
     </div>
+    @php
+        // Deux droits désormais distincts (demande explicite du client) :
+        // voir le commentaire équivalent dans champs-supplementaires/index.blade.php.
+        $peutMettreCorbeille = \App\Support\ResourceAccess::can('types_documents', 'delete');
+        $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('types_documents', 'delete_definitif');
+    @endphp
     <div class="d-flex gap-2">
         @if ($corbeille)
             <a href="{{ route('gestion.types-documents.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('types_documents', 'delete'))
+            @if ($corbeillePeutEtreVidee && $peutSupprimerDefinitivement)
                 <form method="POST" action="{{ route('gestion.types-documents.corbeille.vider') }}" class="d-inline"
                       onsubmit="return confirm('Tous les types de document actuellement dans la corbeille seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -107,7 +113,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can('types_documents', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.types-documents.destroy', $type->id) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre ce type de document à la corbeille ?');">
                                             @csrf
@@ -118,13 +124,15 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('types_documents', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.types-documents.restore', $type->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.types-documents.force-destroy', $type->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

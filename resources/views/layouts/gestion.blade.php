@@ -48,6 +48,28 @@
     $notificationsRecentes = $utilisateurConnecte->notifications()->latest()->limit(8)->get();
     $nombreNotificationsNonLues = $utilisateurConnecte->unreadNotifications()->count();
 
+    // Badge "non lus" du lien Messagerie (voir App\Http\Controllers\
+    // MessagerieController et resources/views/gestion/messagerie/) —
+    // calculé une première fois ici pour l'affichage initial de la page ;
+    // tenu à jour ensuite par sondage périodique (voir le script en bas de
+    // ce fichier), car ce lien est visible sur TOUTES les pages, pas
+    // seulement l'écran Messagerie lui-même.
+    $conversationUtilisateurConnecte = $utilisateurConnecte->role === \App\Models\User::ROLE_ADMIN
+        ? null
+        : \App\Models\Conversation::query()
+            ->with(['dernierMessage', 'lectures' => fn ($q) => $q->where('user_id', $utilisateurConnecte->id)])
+            ->where('utilisateur_id', $utilisateurConnecte->id)
+            ->first();
+
+    $nombreMessagesNonLus = $utilisateurConnecte->role === \App\Models\User::ROLE_ADMIN
+        ? \App\Models\Conversation::query()
+            ->whereNotNull('dernier_message_a')
+            ->with(['dernierMessage', 'lectures' => fn ($q) => $q->where('user_id', $utilisateurConnecte->id)])
+            ->get()
+            ->filter(fn ($conversation) => $conversation->estNonLuePour($utilisateurConnecte))
+            ->count()
+        : ($conversationUtilisateurConnecte && $conversationUtilisateurConnecte->estNonLuePour($utilisateurConnecte) ? 1 : 0);
+
     // Menu "Secrétariat" : une entrée par type de document "épinglé" (voir
     // App\Models\TypeDocument::$epingle_secretariat) — remplace l'ancien
     // menu Filament construit dans AdminPanelProvider, désormais piloté
@@ -136,11 +158,39 @@
         ? \App\Models\TypeDepense::query()->where('actif', true)->orderBy('ordre')->first()
         : null;
 
-    // Lien direct de la sidebar vers "Gestion des contrats" — même principe
-    // que $premiereCategorieDepense ci-dessus.
-    $premiereCategorieContrat = \App\Support\ResourceAccess::can('contrats', 'view')
-        ? \App\Models\TypeContrat::query()->where('actif', true)->orderBy('ordre')->first()
-        : null;
+    // Lien direct de la sidebar vers "Gestion des contrats" — contrairement
+    // à $premiereCategorieDepense ci-dessus, pointe maintenant vers "Tous
+    // les contrats" (gestion.contrats.tous, voir
+    // App\Http\Controllers\ContratController::tous()) plutôt que vers une
+    // catégorie arbitraire : un utilisateur qui vient de créer un contrat
+    // dans une catégorie donnée, puis reclique sur "Gestion des contrats"
+    // dans le menu, atterrissait sur la PREMIÈRE catégorie par `ordre` —
+    // pas forcément la sienne — et pouvait croire que son contrat avait
+    // disparu si cette première catégorie était vide (signalé par le
+    // client). Simple booléen désormais (pas besoin de charger une
+    // catégorie particulière) : masqué seulement si l'utilisateur n'a pas
+    // le droit de voir les contrats du tout.
+    $peutVoirContrats = \App\Support\ResourceAccess::can('contrats', 'view');
+
+    // Vers quel écran la sidebar doit pointer quand on est sur
+    // `documents.voir` (aperçu d'un document, route hors du préfixe
+    // "gestion." — voir le commentaire juste avant le lien "Tous les
+    // documents" ci-dessous) — demande explicite du client ("on clique sur
+    // un fichier excel dans les recettes pour voir, ça renvoie au niveau
+    // des documents") : avant, CE lien restait le seul repère actif pour
+    // N'IMPORTE QUEL document prévisualisé, y compris un document d'un
+    // écran dédié (Recettes, Contrats, PV de soutenance...), ce qui donnait
+    // l'impression trompeuse d'avoir quitté ce module pour "Documents".
+    // Résolu ici via App\Support\TypesEcranDedie::ressourcePourCode() (déjà
+    // utilisée ailleurs pour la même distinction, voir
+    // DocumentController::abortSiEcranDedie()) : null pour un document
+    // réellement générique, auquel cas "Tous les documents" reste le repli
+    // (comportement inchangé pour ce cas-là).
+    $ressourceDocumentPrevisualise = null;
+    if (request()->routeIs('documents.voir')) {
+        $documentPrevisualise = \App\Models\Document::withTrashed()->with('typeDocument')->find(request()->route('document'));
+        $ressourceDocumentPrevisualise = \App\Support\TypesEcranDedie::ressourcePourCode($documentPrevisualise?->typeDocument?->code);
+    }
 @endphp
 
 <div class="app-shell">
@@ -159,6 +209,16 @@
                 <i class="bi bi-grid-1x2-fill"></i><span class="sidebar-label">Tableau de bord</span>
             </a>
 
+            {{-- Visible par TOUT utilisateur connecté (pas seulement l'admin) : contrairement à
+                 l'ancien écran "Annonces", chacun a désormais sa propre conversation à lire et à
+                 laquelle répondre — voir App\Http\Controllers\MessagerieController. --}}
+            <a href="{{ route('gestion.messagerie.index') }}" class="sidebar-link {{ request()->routeIs('gestion.messagerie.*') ? 'active' : '' }}" title="Messagerie">
+                <i class="bi bi-chat-dots-fill"></i><span class="sidebar-label">Messagerie</span>
+                {{-- Toujours présent dans le DOM, même à 0 (juste masqué) : le script de sondage
+                     en bas de ce fichier doit pouvoir le faire réapparaître sans recharger la page. --}}
+                <span class="sidebar-link-badge {{ $nombreMessagesNonLus > 0 ? '' : 'd-none' }}" id="messagerie-badge-nonlus">{{ $nombreMessagesNonLus > 9 ? '9+' : $nombreMessagesNonLus }}</span>
+            </a>
+
             @if (\App\Support\ResourceAccess::can('documents', 'view'))
                 <div class="sidebar-group-label">Documents</div>
                 {{--
@@ -167,11 +227,13 @@
                     n'importe quel module) — sans ce `orWhere`, ouvrir l'aperçu
                     d'un fichier ne laissait plus AUCUNE entrée active dans ce
                     menu, perte de repère signalée par le client ("on ne sait
-                    plus sur quel menu on se trouve"). "Tous les documents" sert
-                    de repère par défaut faute de pouvoir remonter jusqu'au
-                    module d'origine depuis cette page partagée.
+                    plus sur quel menu on se trouve"). "Tous les documents" ne
+                    sert de repère QUE pour un document réellement générique
+                    (voir $ressourceDocumentPrevisualise ci-dessus) — un
+                    document d'un écran dédié (Recettes, Contrats...) active
+                    plutôt SON propre lien ci-dessous.
                 --}}
-                <a href="{{ route('gestion.documents.index') }}" class="sidebar-link {{ (request()->routeIs('gestion.documents.*') && ! request()->boolean('corbeille')) || request()->routeIs('documents.voir') ? 'active' : '' }}" title="Tous les documents">
+                <a href="{{ route('gestion.documents.index') }}" class="sidebar-link {{ (request()->routeIs('gestion.documents.*') && ! request()->boolean('corbeille')) || (request()->routeIs('documents.voir') && ! $ressourceDocumentPrevisualise) ? 'active' : '' }}" title="Tous les documents">
                     <i class="bi bi-file-earmark-text-fill"></i><span class="sidebar-label">Tous les documents</span>
                 </a>
             @endif
@@ -183,31 +245,31 @@
             @endif
 
             @if (\App\Support\ResourceAccess::can('sessions_deliberation', 'view'))
-                <a href="{{ route('gestion.sessions-deliberation.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sessions-deliberation.*') ? 'active' : '' }}" title="PV de délibération">
+                <a href="{{ route('gestion.sessions-deliberation.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sessions-deliberation.*') || $ressourceDocumentPrevisualise === 'sessions_deliberation' ? 'active' : '' }}" title="PV de délibération">
                     <i class="bi bi-clipboard2-check-fill"></i><span class="sidebar-label">PV de délibération</span>
                 </a>
             @endif
 
             @if (\App\Support\ResourceAccess::can('sessions_releves', 'view'))
-                <a href="{{ route('gestion.sessions-releves.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sessions-releves.*') ? 'active' : '' }}" title="Relevés de notes">
+                <a href="{{ route('gestion.sessions-releves.index') }}" class="sidebar-link {{ request()->routeIs('gestion.sessions-releves.*') || $ressourceDocumentPrevisualise === 'sessions_releves' ? 'active' : '' }}" title="Relevés de notes">
                     <i class="bi bi-journal-text"></i><span class="sidebar-label">Relevés de notes</span>
                 </a>
             @endif
 
             @if (\App\Support\ResourceAccess::can('pv_soutenances', 'view'))
-                <a href="{{ route('gestion.pv-soutenances.index') }}" class="sidebar-link {{ request()->routeIs('gestion.pv-soutenances.*') ? 'active' : '' }}" title="PV de soutenance">
+                <a href="{{ route('gestion.pv-soutenances.index') }}" class="sidebar-link {{ request()->routeIs('gestion.pv-soutenances.*') || $ressourceDocumentPrevisualise === 'pv_soutenances' ? 'active' : '' }}" title="PV de soutenance">
                     <i class="bi bi-mortarboard-fill"></i><span class="sidebar-label">PV de soutenance</span>
                 </a>
             @endif
 
             @if (\App\Support\ResourceAccess::can('reunions', 'view'))
-                <a href="{{ route('gestion.reunions.index') }}" class="sidebar-link {{ request()->routeIs('gestion.reunions.*') ? 'active' : '' }}" title="PV de réunion">
+                <a href="{{ route('gestion.reunions.index') }}" class="sidebar-link {{ request()->routeIs('gestion.reunions.*') || $ressourceDocumentPrevisualise === 'reunions' ? 'active' : '' }}" title="PV de réunion">
                     <i class="bi bi-people-fill"></i><span class="sidebar-label">PV de réunion</span>
                 </a>
             @endif
 
             @if (\App\Support\ResourceAccess::can('etudiants', 'view'))
-                <a href="{{ route('gestion.etudiants.index') }}" class="sidebar-link {{ request()->routeIs('gestion.etudiants.*') ? 'active' : '' }}" title="Dossier étudiant">
+                <a href="{{ route('gestion.etudiants.index') }}" class="sidebar-link {{ request()->routeIs('gestion.etudiants.*') || $ressourceDocumentPrevisualise === 'etudiants' ? 'active' : '' }}" title="Dossier étudiant">
                     <i class="bi bi-person-vcard-fill"></i><span class="sidebar-label">Dossier étudiant</span>
                 </a>
             @endif
@@ -215,12 +277,12 @@
             {{-- Gestion des contrats — demande explicite du client
                  ("intègre à présent la gestion des contrat"), voir le
                  docblock de App\Http\Controllers\ContratController. Lien
-                 direct vers la première catégorie active, même raison que
-                 "Gestion des dépenses"/"Gestion des recettes" plus bas
-                 (évite un aller-retour HTTP inutile) — masqué si aucune
-                 catégorie active n'existe encore. --}}
-            @if ($premiereCategorieContrat)
-                <a href="{{ route('gestion.contrats.index', ['typeContrat' => $premiereCategorieContrat->code]) }}" class="sidebar-link {{ request()->routeIs('gestion.contrats.*') ? 'active' : '' }}" title="Gestion des contrats">
+                 direct vers "Tous les contrats" (voir $peutVoirContrats
+                 ci-dessus pour pourquoi, plutôt qu'une catégorie précise) —
+                 masqué si l'utilisateur n'a pas le droit de voir les
+                 contrats. --}}
+            @if ($peutVoirContrats)
+                <a href="{{ route('gestion.contrats.tous') }}" class="sidebar-link {{ request()->routeIs('gestion.contrats.*') || $ressourceDocumentPrevisualise === 'contrats' ? 'active' : '' }}" title="Gestion des contrats">
                     <i class="bi bi-vector-pen"></i><span class="sidebar-label">Gestion des contrats</span>
                 </a>
             @endif
@@ -243,25 +305,25 @@
                 <div class="sidebar-group-label">Finances</div>
 
                 @if (\App\Support\ResourceAccess::can('etats_financiers', 'view'))
-                    <a href="{{ route('gestion.etats-financiers.index') }}" class="sidebar-link {{ request()->routeIs('gestion.etats-financiers.*') ? 'active' : '' }}" title="États financiers">
+                    <a href="{{ route('gestion.etats-financiers.index') }}" class="sidebar-link {{ request()->routeIs('gestion.etats-financiers.*') || $ressourceDocumentPrevisualise === 'etats_financiers' ? 'active' : '' }}" title="États financiers">
                         <i class="bi bi-bar-chart-line-fill"></i><span class="sidebar-label">États financiers</span>
                     </a>
                 @endif
 
                 @if (\App\Support\ResourceAccess::can('recettes', 'view'))
-                    <a href="{{ route('gestion.recettes.scolarite.index') }}" class="sidebar-link {{ request()->routeIs('gestion.recettes.*') ? 'active' : '' }}" title="Gestion des recettes">
+                    <a href="{{ route('gestion.recettes.scolarite.index') }}" class="sidebar-link {{ request()->routeIs('gestion.recettes.*') || $ressourceDocumentPrevisualise === 'recettes' ? 'active' : '' }}" title="Gestion des recettes">
                         <i class="bi bi-cash-coin"></i><span class="sidebar-label">Gestion des recettes</span>
                     </a>
                 @endif
 
                 @if ($premiereCategorieDepense)
-                    <a href="{{ route('gestion.depenses.index', ['typeDepense' => $premiereCategorieDepense->code]) }}" class="sidebar-link {{ request()->routeIs('gestion.depenses.*') ? 'active' : '' }}" title="Gestion des dépenses">
+                    <a href="{{ route('gestion.depenses.index', ['typeDepense' => $premiereCategorieDepense->code]) }}" class="sidebar-link {{ request()->routeIs('gestion.depenses.*') || $ressourceDocumentPrevisualise === 'depenses' ? 'active' : '' }}" title="Gestion des dépenses">
                         <i class="bi bi-credit-card-2-front-fill"></i><span class="sidebar-label">Gestion des dépenses</span>
                     </a>
                 @endif
 
                 @if (\App\Support\ResourceAccess::can('listes_finances_etudiants', 'view'))
-                    <a href="{{ route('gestion.listes-finances-etudiants.index') }}" class="sidebar-link {{ request()->routeIs('gestion.listes-finances-etudiants.*') ? 'active' : '' }}" title="Liste des étudiants (finances)">
+                    <a href="{{ route('gestion.listes-finances-etudiants.index') }}" class="sidebar-link {{ request()->routeIs('gestion.listes-finances-etudiants.*') || $ressourceDocumentPrevisualise === 'listes_finances_etudiants' ? 'active' : '' }}" title="Liste des étudiants (finances)">
                         <i class="bi bi-people-fill"></i><span class="sidebar-label">Liste des étudiants (finances)</span>
                     </a>
                 @endif
@@ -330,9 +392,6 @@
                     </a>
                     <a href="{{ route('gestion.corbeilles.index') }}" class="sidebar-link {{ request()->routeIs('gestion.corbeilles.*') ? 'active' : '' }}" title="Corbeilles">
                         <i class="bi bi-trash3-fill"></i><span class="sidebar-label">Corbeilles</span>
-                    </a>
-                    <a href="{{ route('gestion.annonces.create') }}" class="sidebar-link {{ request()->routeIs('gestion.annonces.*') ? 'active' : '' }}" title="Annonces">
-                        <i class="bi bi-megaphone-fill"></i><span class="sidebar-label">Annonces</span>
                     </a>
 
                     {{--
@@ -678,6 +737,35 @@
         }
         bouton.setAttribute('aria-label', futureVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
     });
+
+    // Badge "non lus" du lien Messagerie (voir App\Http\Controllers\
+    // MessagerieController::nombreNonLus()) — sondage toutes les 30 secondes
+    // sur TOUTE page de l'application (pas seulement l'écran Messagerie lui-
+    // même), pour que le badge apparaisse même si on reste sur le tableau de
+    // bord ou un autre écran pendant qu'un message arrive. Même raisonnement
+    // que le sondage du fil de discussion (gestion/messagerie/index.blade.php) :
+    // pas d'infrastructure websocket sur l'hébergement du client.
+    (function () {
+        const badge = document.getElementById('messagerie-badge-nonlus');
+        if (!badge) return;
+
+        const url = {{ \Illuminate\Support\Js::from(route('gestion.messagerie.nombre-non-lus')) }};
+
+        function actualiser() {
+            fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (reponse) { return reponse.ok ? reponse.json() : null; })
+                .then(function (donnees) {
+                    if (!donnees) return;
+
+                    const nombre = donnees.nombre || 0;
+                    badge.classList.toggle('d-none', nombre === 0);
+                    badge.textContent = nombre > 9 ? '9+' : String(nombre);
+                })
+                .catch(function (erreur) { console.error(erreur); });
+        }
+
+        setInterval(actualiser, 30000);
+    })();
 </script>
 @yield('scripts')
 </body>

@@ -15,7 +15,7 @@
             <a href="{{ route('gestion.referentiels.index', ['referentiel' => $referentiel]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can($definition['cle'], 'delete'))
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can($definition['cle'], 'delete_definitif'))
                 <form method="POST" action="{{ route('gestion.referentiels.corbeille.vider', ['referentiel' => $referentiel]) }}" class="d-inline"
                       onsubmit="return confirm('Tous les éléments actuellement dans la corbeille seront supprimés définitivement (ceux encore utilisés ailleurs seront ignorés). Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -67,7 +67,13 @@
     </form>
 </div>
 
-@php $peutSupprimerReferentiel = \App\Support\ResourceAccess::can($definition['cle'], 'delete'); @endphp
+@php
+    // Deux droits désormais distincts (demande explicite du client) : voir
+    // le commentaire équivalent dans champs-supplementaires/index.blade.php.
+    $peutMettreCorbeille = \App\Support\ResourceAccess::can($definition['cle'], 'delete');
+    $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can($definition['cle'], 'delete_definitif');
+    $peutSupprimerReferentiel = $peutMettreCorbeille || $peutSupprimerDefinitivement;
+@endphp
 
 @if ($peutSupprimerReferentiel)
     {{-- Formulaire "porteur" de la sélection groupée — même principe que
@@ -82,21 +88,27 @@
         <span><strong id="compteurSelectionReferentiel">0</strong> élément(s) sélectionné(s)</span>
         <div class="d-flex gap-2">
             @if (! $corbeille)
-                <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille-groupee', ['referentiel' => $referentiel]) }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Mettre les éléments sélectionnés à la corbeille ?');">
-                    <i class="bi bi-trash3"></i> Mettre à la corbeille
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille-groupee', ['referentiel' => $referentiel]) }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Mettre les éléments sélectionnés à la corbeille ?');">
+                        <i class="bi bi-trash3"></i> Mettre à la corbeille
+                    </button>
+                @endif
             @else
-                <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille.restaurer-groupe', ['referentiel' => $referentiel]) }}"
-                        class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
-                </button>
-                <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille.force-destroy-groupe', ['referentiel' => $referentiel]) }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Supprimer définitivement les éléments sélectionnés ? Cette action est irréversible.');">
-                    <i class="bi bi-x-circle"></i> Supprimer définitivement
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille.restaurer-groupe', ['referentiel' => $referentiel]) }}"
+                            class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                    </button>
+                @endif
+                @if ($peutSupprimerDefinitivement)
+                    <button type="submit" form="formSelectionReferentiel" formaction="{{ route('gestion.referentiels.corbeille.force-destroy-groupe', ['referentiel' => $referentiel]) }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Supprimer définitivement les éléments sélectionnés ? Cette action est irréversible.');">
+                        <i class="bi bi-x-circle"></i> Supprimer définitivement
+                    </button>
+                @endif
             @endif
         </div>
     </div>
@@ -156,7 +168,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can($definition['cle'], 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.referentiels.destroy', ['referentiel' => $referentiel, 'id' => $item->id]) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre {{ $definition['singulier'] }} à la corbeille ?');">
                                             @csrf
@@ -167,13 +179,16 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can($definition['cle'], 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.referentiels.restore', ['referentiel' => $referentiel, 'id' => $item->id]) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.referentiels.force-destroy', ['referentiel' => $referentiel, 'id' => $item->id]) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

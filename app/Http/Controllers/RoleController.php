@@ -143,6 +143,15 @@ class RoleController extends Controller
                     continue;
                 }
 
+                // Dépenses : pas de corbeille propre à cette ressource (voir
+                // App\Http\Controllers\DepenseController — ses seules actions
+                // de suppression sont des suppressions réversibles de pièces
+                // jointes, déjà couvertes par "delete"), donc "Supprimer
+                // définitivement" n'a pas de sens ici.
+                if ($cle === 'depenses' && $action === 'delete_definitif') {
+                    continue;
+                }
+
                 $permissions[$cle][$action] = $request->boolean("permissions.{$cle}.{$action}");
             }
         }

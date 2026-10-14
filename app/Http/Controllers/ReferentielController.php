@@ -322,7 +322,7 @@ class ReferentielController extends Controller
     public function forceDestroy(string $referentiel, int $id): RedirectResponse
     {
         $definition = $this->definition($referentiel);
-        abort_unless(ResourceAccess::can($definition['cle'], 'delete'), 403);
+        abort_unless(ResourceAccess::can($definition['cle'], 'delete_definitif'), 403);
 
         $item = $definition['modele']::onlyTrashed()->findOrFail($id);
 
@@ -439,7 +439,7 @@ class ReferentielController extends Controller
     public function forceDestroyGroupe(Request $request, string $referentiel): RedirectResponse
     {
         $definition = $this->definition($referentiel);
-        abort_unless(ResourceAccess::can($definition['cle'], 'delete'), 403);
+        abort_unless(ResourceAccess::can($definition['cle'], 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'ids' => ['required', 'array', 'min:1'],
@@ -475,7 +475,7 @@ class ReferentielController extends Controller
     public function viderCorbeille(string $referentiel): RedirectResponse
     {
         $definition = $this->definition($referentiel);
-        abort_unless(ResourceAccess::can($definition['cle'], 'delete'), 403);
+        abort_unless(ResourceAccess::can($definition['cle'], 'delete_definitif'), 403);
 
         $items = $definition['modele']::onlyTrashed()->get();
 

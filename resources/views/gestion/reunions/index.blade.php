@@ -15,7 +15,7 @@
             <a href="{{ route('gestion.reunions.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('reunions', 'delete'))
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('reunions', 'delete_definitif'))
                 <form method="POST" action="{{ route('gestion.reunions.corbeille.vider') }}" class="d-inline"
                       onsubmit="return confirm('Toutes les réunions actuellement dans la corbeille seront supprimées définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +26,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('reunions', 'delete'))
+            @if (\App\Support\ResourceAccess::can('reunions', 'delete') || \App\Support\ResourceAccess::can('reunions', 'delete_definitif'))
                 <a href="{{ route('gestion.reunions.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -158,7 +158,13 @@
     }
 </script>
 
-@php $peutSupprimerReunions = \App\Support\ResourceAccess::can('reunions', 'delete'); @endphp
+@php
+    // Deux droits désormais distincts (demande explicite du client) : voir
+    // le commentaire équivalent dans champs-supplementaires/index.blade.php.
+    $peutMettreCorbeille = \App\Support\ResourceAccess::can('reunions', 'delete');
+    $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('reunions', 'delete_definitif');
+    $peutSupprimerReunions = $peutMettreCorbeille || $peutSupprimerDefinitivement;
+@endphp
 
 @if ($peutSupprimerReunions)
     {{-- Formulaire "porteur" de la sélection groupée — même principe que
@@ -171,21 +177,27 @@
         <span><strong id="compteurSelectionReunions">0</strong> réunion(s) sélectionnée(s)</span>
         <div class="d-flex gap-2">
             @if (! $corbeille)
-                <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille-groupee') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Mettre les réunions sélectionnées à la corbeille ?');">
-                    <i class="bi bi-trash3"></i> Mettre à la corbeille
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille-groupee') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Mettre les réunions sélectionnées à la corbeille ?');">
+                        <i class="bi bi-trash3"></i> Mettre à la corbeille
+                    </button>
+                @endif
             @else
-                <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille.restaurer-groupe') }}"
-                        class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
-                </button>
-                <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille.force-destroy-groupe') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Supprimer définitivement les réunions sélectionnées ? Cette action est irréversible.');">
-                    <i class="bi bi-x-circle"></i> Supprimer définitivement
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille.restaurer-groupe') }}"
+                            class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                    </button>
+                @endif
+                @if ($peutSupprimerDefinitivement)
+                    <button type="submit" form="formSelectionReunions" formaction="{{ route('gestion.reunions.corbeille.force-destroy-groupe') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Supprimer définitivement les réunions sélectionnées ? Cette action est irréversible.');">
+                        <i class="bi bi-x-circle"></i> Supprimer définitivement
+                    </button>
+                @endif
             @endif
         </div>
     </div>
@@ -236,7 +248,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can('reunions', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.reunions.destroy', $item->id) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre cette réunion à la corbeille ?');">
                                             @csrf
@@ -247,13 +259,16 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('reunions', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.reunions.restore', $item->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.reunions.force-destroy', $item->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

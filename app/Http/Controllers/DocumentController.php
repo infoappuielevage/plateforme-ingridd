@@ -338,7 +338,7 @@ class DocumentController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+        abort_unless(ResourceAccess::can('documents', 'delete_definitif'), 403);
 
         [$documents, $ignores] = $this->separerVerrouilles(Document::onlyTrashed()->get());
 
@@ -451,7 +451,7 @@ class DocumentController extends Controller
 
     public function forceDestroy(int $document): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+        abort_unless(ResourceAccess::can('documents', 'delete_definitif'), 403);
 
         $document = Document::onlyTrashed()->findOrFail($document);
         $this->abortSiEcranDedie($document);
@@ -473,7 +473,7 @@ class DocumentController extends Controller
      */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('documents', 'delete'), 403);
+        abort_unless(ResourceAccess::can('documents', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'documents' => ['required', 'array', 'min:1'],

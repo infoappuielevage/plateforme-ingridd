@@ -11,9 +11,9 @@ use Illuminate\Support\Facades\Schema;
  * gestion.blade.php, App\Http\Controllers\NotificationController) ainsi que
  * les notifications automatiques (blocage/déblocage de compte,
  * réinitialisation de mot de passe par un administrateur, alertes
- * sauvegarde/espace disque — voir app/Notifications/) et les annonces
- * manuelles envoyées par un administrateur (voir
- * App\Http\Controllers\AnnonceController).
+ * sauvegarde/espace disque — voir app/Notifications/) et les messages
+ * manuels envoyés par un administrateur depuis Administration > Messagerie
+ * (voir App\Http\Controllers\MessagerieController).
  *
  * Reprend EXACTEMENT le schéma généré par `php artisan notifications:table`
  * dans n'importe quel projet Laravel : `id` en UUID (pas un entier

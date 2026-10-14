@@ -15,7 +15,7 @@
             <a href="{{ route('gestion.contrats.index', ['typeContrat' => $typeContrat->code]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('contrats', 'delete'))
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('contrats', 'delete_definitif'))
                 <form method="POST" action="{{ route('gestion.contrats.corbeille.vider', ['typeContrat' => $typeContrat->code]) }}" class="d-inline"
                       onsubmit="return confirm('Tous les contrats actuellement dans la corbeille de cette catégorie seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +26,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('contrats', 'delete'))
+            @if (\App\Support\ResourceAccess::can('contrats', 'delete') || \App\Support\ResourceAccess::can('contrats', 'delete_definitif'))
                 <a href="{{ route('gestion.contrats.index', ['typeContrat' => $typeContrat->code, 'corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -109,7 +109,13 @@
     }
 </script>
 
-@php $peutSupprimerContrats = \App\Support\ResourceAccess::can('contrats', 'delete'); @endphp
+@php
+    // Deux droits désormais distincts (demande explicite du client) : voir
+    // le commentaire équivalent dans champs-supplementaires/index.blade.php.
+    $peutMettreCorbeille = \App\Support\ResourceAccess::can('contrats', 'delete');
+    $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('contrats', 'delete_definitif');
+    $peutSupprimerContrats = $peutMettreCorbeille || $peutSupprimerDefinitivement;
+@endphp
 
 @if ($peutSupprimerContrats)
     <form id="formSelectionContrats" method="POST" class="d-none">
@@ -120,21 +126,27 @@
         <span><strong id="compteurSelectionContrats">0</strong> contrat(s) sélectionné(s)</span>
         <div class="d-flex gap-2">
             @if (! $corbeille)
-                <button type="submit" form="formSelectionContrats" formaction="{{ route('gestion.contrats.corbeille-groupee', ['typeContrat' => $typeContrat->code]) }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Mettre les contrats sélectionnés à la corbeille ?');">
-                    <i class="bi bi-trash3"></i> Mettre à la corbeille
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionContrats" formaction="{{ route('gestion.contrats.corbeille-groupee', ['typeContrat' => $typeContrat->code]) }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Mettre les contrats sélectionnés à la corbeille ?');">
+                        <i class="bi bi-trash3"></i> Mettre à la corbeille
+                    </button>
+                @endif
             @else
-                <button type="submit" form="formSelectionContrats" formaction="{{ route('gestion.contrats.corbeille.restaurer-groupe', ['typeContrat' => $typeContrat->code]) }}"
-                        class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
-                </button>
-                <button type="submit" form="formSelectionContrats" formaction="{{ route('gestion.contrats.corbeille.force-destroy-groupe', ['typeContrat' => $typeContrat->code]) }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Supprimer définitivement les contrats sélectionnés ? Cette action est irréversible.');">
-                    <i class="bi bi-x-circle"></i> Supprimer définitivement
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionContrats" formaction="{{ route('gestion.contrats.corbeille.restaurer-groupe', ['typeContrat' => $typeContrat->code]) }}"
+                            class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                    </button>
+                @endif
+                @if ($peutSupprimerDefinitivement)
+                    <button type="submit" form="formSelectionContrats" formaction="{{ route('gestion.contrats.corbeille.force-destroy-groupe', ['typeContrat' => $typeContrat->code]) }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Supprimer définitivement les contrats sélectionnés ? Cette action est irréversible.');">
+                        <i class="bi bi-x-circle"></i> Supprimer définitivement
+                    </button>
+                @endif
             @endif
         </div>
     </div>
@@ -192,7 +204,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if ($peutSupprimerContrats)
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.contrats.destroy', ['typeContrat' => $typeContrat->code, 'contrat' => $item->id]) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre ce contrat à la corbeille ?');">
                                             @csrf
@@ -203,13 +215,16 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if ($peutSupprimerContrats)
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.contrats.restore', ['typeContrat' => $typeContrat->code, 'contrat' => $item->id]) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.contrats.force-destroy', ['typeContrat' => $typeContrat->code, 'contrat' => $item->id]) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

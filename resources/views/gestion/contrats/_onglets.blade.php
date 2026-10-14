@@ -21,13 +21,27 @@
 
     Variables attendues : $categories (catégories actives, voir
     App\Http\Controllers\ContratController::categoriesActives()),
-    $typeContrat (catégorie actuellement affichée).
+    $typeContrat (catégorie actuellement affichée — absente/null sur
+    gestion/contrats/tous.blade.php, voir l'onglet "Tous" ci-dessous).
+
+    Onglet "Tous" (demande explicite du client, "ajoute un autre tableau
+    pour tout les contrat") : premier onglet, pastille générique
+    "niveau-tab-tous" (déjà utilisée telle quelle par
+    resources/views/gestion/reunions/index.blade.php pour son propre onglet
+    "Toutes" — pas de couleur dédiée à réserver), actif sur
+    gestion.contrats.tous.
 --}}
 <ul class="nav nav-tabs-niveaux nav-tabs-scroll mb-3">
+    <li class="nav-item">
+        <a href="{{ route('gestion.contrats.tous') }}"
+           class="nav-link niveau-tab-tous {{ request()->routeIs('gestion.contrats.tous*') ? 'active' : '' }}">
+            Tous
+        </a>
+    </li>
     @foreach ($categories as $categorie)
         <li class="nav-item">
             <a href="{{ route('gestion.contrats.index', ['typeContrat' => $categorie->code]) }}"
-               class="nav-link palette-tab-{{ $categorie->paletteIndex() }} {{ $categorie->id === $typeContrat->id ? 'active' : '' }}">
+               class="nav-link palette-tab-{{ $categorie->paletteIndex() }} {{ isset($typeContrat) && $categorie->id === $typeContrat->id ? 'active' : '' }}">
                 {{ $categorie->libelle }}
             </a>
         </li>

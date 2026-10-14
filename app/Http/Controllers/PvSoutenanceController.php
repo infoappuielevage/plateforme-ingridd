@@ -678,7 +678,7 @@ class PvSoutenanceController extends Controller
      */
     public function forceDestroy(int $pvSoutenance): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('pv_soutenances', 'delete'), 403);
+        abort_unless(ResourceAccess::can('pv_soutenances', 'delete_definitif'), 403);
 
         $pv = PvSoutenance::onlyTrashed()->with('fichiers')->findOrFail($pvSoutenance);
 
@@ -701,7 +701,7 @@ class PvSoutenanceController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('pv_soutenances', 'delete'), 403);
+        abort_unless(ResourceAccess::can('pv_soutenances', 'delete_definitif'), 403);
 
         $pvSoutenances = PvSoutenance::onlyTrashed()->with('fichiers')->get();
 
@@ -800,7 +800,7 @@ class PvSoutenanceController extends Controller
      */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('pv_soutenances', 'delete'), 403);
+        abort_unless(ResourceAccess::can('pv_soutenances', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'pvSoutenances' => ['required', 'array', 'min:1'],

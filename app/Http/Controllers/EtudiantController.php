@@ -513,7 +513,7 @@ class EtudiantController extends Controller
      */
     public function forceDestroy(int $etudiant): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('etudiants', 'delete_definitif'), 403);
 
         $etudiantTrouve = Etudiant::onlyTrashed()->with('fichiers')->findOrFail($etudiant);
 
@@ -536,7 +536,7 @@ class EtudiantController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('etudiants', 'delete_definitif'), 403);
 
         $etudiants = Etudiant::onlyTrashed()->with('fichiers')->get();
 
@@ -640,7 +640,7 @@ class EtudiantController extends Controller
      */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('etudiants', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'etudiants' => ['required', 'array', 'min:1'],

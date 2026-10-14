@@ -131,7 +131,7 @@ class TypeContratController extends Controller
      */
     public function forceDestroy(int $id): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_contrats', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_contrats', 'delete_definitif'), 403);
 
         $type = TypeContrat::onlyTrashed()->findOrFail($id);
 
@@ -151,7 +151,7 @@ class TypeContratController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_contrats', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_contrats', 'delete_definitif'), 403);
 
         $types = TypeContrat::onlyTrashed()->get();
 

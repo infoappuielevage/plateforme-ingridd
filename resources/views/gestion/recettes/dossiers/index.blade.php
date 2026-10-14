@@ -10,12 +10,18 @@
             {{ $typeLibelle }} — un dossier par année académique{{ $corbeille ? ' — corbeille' : '' }}.
         </p>
     </div>
+    @php
+        // Deux droits désormais distincts (demande explicite du client) :
+        // voir le commentaire équivalent dans champs-supplementaires/index.blade.php.
+        $peutMettreCorbeille = \App\Support\ResourceAccess::can('recettes', 'delete');
+        $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('recettes', 'delete_definitif');
+    @endphp
     <div class="d-flex gap-2">
         @if ($corbeille)
             <a href="{{ route('gestion.recettes.dossiers.index', ['type' => $typeUrl]) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('recettes', 'delete'))
+            @if ($corbeillePeutEtreVidee && $peutSupprimerDefinitivement)
                 <form method="POST" action="{{ route('gestion.recettes.dossiers.corbeille.vider', ['type' => $typeUrl]) }}" class="d-inline"
                       onsubmit="return confirm('Tous les dossiers actuellement dans la corbeille de ce volet seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +32,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('recettes', 'delete'))
+            @if ($peutMettreCorbeille || $peutSupprimerDefinitivement)
                 <a href="{{ route('gestion.recettes.dossiers.index', ['type' => $typeUrl, 'corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -77,7 +83,7 @@
                                     <a href="{{ route('gestion.recettes.dossiers.show', ['type' => $typeUrl, 'dossier' => $item->id]) }}" class="btn btn-outline-secondary" title="Ouvrir">
                                         <i class="bi bi-folder2-open"></i>
                                     </a>
-                                    @if (\App\Support\ResourceAccess::can('recettes', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.recettes.dossiers.destroy', ['type' => $typeUrl, 'dossier' => $item->id]) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre ce dossier à la corbeille ?');">
                                             @csrf
@@ -88,13 +94,15 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('recettes', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.recettes.dossiers.restore', ['type' => $typeUrl, 'dossier' => $item->id]) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.recettes.dossiers.force-destroy', ['type' => $typeUrl, 'dossier' => $item->id]) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

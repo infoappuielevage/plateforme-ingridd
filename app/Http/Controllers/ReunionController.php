@@ -327,7 +327,7 @@ class ReunionController extends Controller
      */
     public function forceDestroy(int $reunion): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('reunions', 'delete'), 403);
+        abort_unless(ResourceAccess::can('reunions', 'delete_definitif'), 403);
 
         $reunionTrouvee = Reunion::onlyTrashed()->with('fichiers')->findOrFail($reunion);
 
@@ -351,7 +351,7 @@ class ReunionController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('reunions', 'delete'), 403);
+        abort_unless(ResourceAccess::can('reunions', 'delete_definitif'), 403);
 
         $reunions = Reunion::onlyTrashed()->with('fichiers')->get();
 
@@ -451,7 +451,7 @@ class ReunionController extends Controller
      */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('reunions', 'delete'), 403);
+        abort_unless(ResourceAccess::can('reunions', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'reunions' => ['required', 'array', 'min:1'],

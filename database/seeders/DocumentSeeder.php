@@ -21,6 +21,7 @@ use App\Models\SousTypeDocument;
 use App\Models\TypeDocument;
 use App\Models\TypePieceEtudiant;
 use App\Models\User;
+use App\Support\FichiersDemo;
 use App\Support\Semestres;
 use App\Support\TypesEcranDedie;
 use Illuminate\Database\Seeder;
@@ -45,9 +46,14 @@ use Illuminate\Support\Str;
  *     php artisan db:seed --class=DocumentSeeder
  *
  * Chaque document créé ici a un vrai (petit) fichier écrit sur le disque
- * `documents`, pour que "Télécharger" fonctionne réellement — mais le
- * contenu est un texte de remplacement générique, pas un vrai PDF/Word/
- * Excel : inutile d'essayer de l'ouvrir comme un document bureautique.
+ * `documents`, pour que "Télécharger" ET "Voir" (aperçu navigateur, voir
+ * routes/web.php `documents.voir`) fonctionnent réellement — un VRAI PDF ou
+ * classeur XLSX minimal (voir App\Support\FichiersDemo), pas un simple texte
+ * de remplacement sous une extension trompeuse comme avant (le client avait
+ * remarqué que l'aperçu échouait sur ces documents de démo). Toujours pas
+ * de vrai contenu "métier" cela dit : juste le libellé du document et la
+ * mention "Document de démonstration", rien à voir avec un vrai PDF/Word/
+ * Excel d'archive.
  *
  * Chaque document de démo porte la mention "Document de démonstration" dans
  * sa description : c'est ce qui sert de garde-fou pour ne jamais rejouer ce
@@ -68,8 +74,6 @@ use Illuminate\Support\Str;
 class DocumentSeeder extends Seeder
 {
     protected const DESCRIPTION_DEMO = 'Document de démonstration (généré par DocumentSeeder, à supprimer avant la mise en production réelle).';
-
-    protected const CONTENU_DEMO = "Ceci est un contenu de remplacement généré automatiquement par DocumentSeeder pour illustrer la plateforme.\nCe n'est pas un vrai document.";
 
     public function run(): void
     {
@@ -884,6 +888,14 @@ class DocumentSeeder extends Seeder
      * champ "Titre" a été retiré, sur demande du client : il faisait doublon
      * avec le nom du fichier d'origine).
      *
+     * Le contenu est un VRAI PDF/XLSX valide (voir App\Support\FichiersDemo)
+     * depuis la demande explicite du client ("l'aperçu ne marche pas sur les
+     * pdf/excel de démo") : avant, un simple texte de remplacement était
+     * écrit sous une extension .pdf/.xlsx — "Télécharger" fonctionnait
+     * (le fichier existe), mais "Voir" (aperçu navigateur) échouait, le
+     * lecteur PDF/SheetJS recevant un fichier qui n'était ni l'un ni
+     * l'autre en réalité.
+     *
      * `$ajouteLe` permet d'antidater `created_at`/`updated_at` (pour étaler
      * les documents administratifs génériques sur 12 mois) — fait via une
      * requête directe (Illuminate\Support\Facades\DB), pas via le modèle,
@@ -896,7 +908,11 @@ class DocumentSeeder extends Seeder
         $nomOriginal = Str::limit(Str::slug($libelle, '-'), 80, '').'.'.$extension;
         $chemin = 'uploads/'.Str::uuid().'.'.$extension;
 
-        Storage::disk('documents')->put($chemin, self::CONTENU_DEMO."\n\n".$libelle);
+        $contenu = $extension === 'xlsx'
+            ? FichiersDemo::xlsx($libelle, [['Document', $libelle], ['Remarque', self::DESCRIPTION_DEMO]])
+            : FichiersDemo::pdf($libelle, [self::DESCRIPTION_DEMO]);
+
+        Storage::disk('documents')->put($chemin, $contenu);
 
         $document = Document::create(array_merge($attributs, [
             'description' => self::DESCRIPTION_DEMO,

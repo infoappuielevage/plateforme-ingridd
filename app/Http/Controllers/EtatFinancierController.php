@@ -189,7 +189,7 @@ class EtatFinancierController extends Controller
     /** Suppression définitive : met aussi le document attaché à la corbeille, même raisonnement que les autres écrans dédiés. */
     public function forceDestroy(int $etatFinancier): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('etats_financiers', 'delete'), 403);
+        abort_unless(ResourceAccess::can('etats_financiers', 'delete_definitif'), 403);
 
         $trouve = EtatFinancier::onlyTrashed()->findOrFail($etatFinancier);
 
@@ -209,7 +209,7 @@ class EtatFinancierController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('etats_financiers', 'delete'), 403);
+        abort_unless(ResourceAccess::can('etats_financiers', 'delete_definitif'), 403);
 
         $etatsFinanciers = EtatFinancier::onlyTrashed()->get();
 
@@ -293,7 +293,7 @@ class EtatFinancierController extends Controller
     /** Suppression définitive groupée — même raisonnement que forceDestroy() ci-dessus. */
     public function forceDestroyGroupe(Request $request): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('etats_financiers', 'delete'), 403);
+        abort_unless(ResourceAccess::can('etats_financiers', 'delete_definitif'), 403);
 
         $donnees = $request->validate([
             'etats_financiers' => ['required', 'array', 'min:1'],

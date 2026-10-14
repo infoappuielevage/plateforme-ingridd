@@ -178,7 +178,7 @@ class TypeDocumentController extends Controller
 
     public function forceDestroy(int $id): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_documents', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_documents', 'delete_definitif'), 403);
 
         TypeDocument::onlyTrashed()->findOrFail($id)->forceDelete();
 
@@ -195,7 +195,7 @@ class TypeDocumentController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_documents', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_documents', 'delete_definitif'), 403);
 
         $types = TypeDocument::onlyTrashed()->get();
 

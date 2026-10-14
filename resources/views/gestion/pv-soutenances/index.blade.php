@@ -15,7 +15,7 @@
             <a href="{{ route('gestion.pv-soutenances.index') }}" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Retour
             </a>
-            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('pv_soutenances', 'delete'))
+            @if ($corbeillePeutEtreVidee && \App\Support\ResourceAccess::can('pv_soutenances', 'delete_definitif'))
                 <form method="POST" action="{{ route('gestion.pv-soutenances.corbeille.vider') }}" class="d-inline"
                       onsubmit="return confirm('Tous les PV actuellement dans la corbeille seront supprimés définitivement. Cette action est irréversible. Continuer ?');">
                     @csrf
@@ -26,7 +26,7 @@
                 </form>
             @endif
         @else
-            @if (\App\Support\ResourceAccess::can('pv_soutenances', 'delete'))
+            @if (\App\Support\ResourceAccess::can('pv_soutenances', 'delete') || \App\Support\ResourceAccess::can('pv_soutenances', 'delete_definitif'))
                 <a href="{{ route('gestion.pv-soutenances.index', ['corbeille' => 1]) }}" class="btn btn-outline-secondary">
                     <i class="bi bi-trash3"></i> Corbeille
                 </a>
@@ -181,7 +181,13 @@
     } catch (e) {}
 </script>
 
-@php $peutSupprimerPvSoutenances = \App\Support\ResourceAccess::can('pv_soutenances', 'delete'); @endphp
+@php
+    // Deux droits désormais distincts (demande explicite du client) : voir
+    // le commentaire équivalent dans champs-supplementaires/index.blade.php.
+    $peutMettreCorbeille = \App\Support\ResourceAccess::can('pv_soutenances', 'delete');
+    $peutSupprimerDefinitivement = \App\Support\ResourceAccess::can('pv_soutenances', 'delete_definitif');
+    $peutSupprimerPvSoutenances = $peutMettreCorbeille || $peutSupprimerDefinitivement;
+@endphp
 
 @if ($peutSupprimerPvSoutenances)
     {{-- Formulaire "porteur" de la sélection groupée — même principe que
@@ -194,21 +200,27 @@
         <span><strong id="compteurSelectionPvSoutenances">0</strong> PV sélectionné(s)</span>
         <div class="d-flex gap-2">
             @if (! $corbeille)
-                <button type="submit" form="formSelectionPvSoutenances" formaction="{{ route('gestion.pv-soutenances.corbeille-groupee') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Mettre les PV sélectionnés à la corbeille ?');">
-                    <i class="bi bi-trash3"></i> Mettre à la corbeille
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionPvSoutenances" formaction="{{ route('gestion.pv-soutenances.corbeille-groupee') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Mettre les PV sélectionnés à la corbeille ?');">
+                        <i class="bi bi-trash3"></i> Mettre à la corbeille
+                    </button>
+                @endif
             @else
-                <button type="submit" form="formSelectionPvSoutenances" formaction="{{ route('gestion.pv-soutenances.corbeille.restaurer-groupe') }}"
-                        class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
-                </button>
-                <button type="submit" form="formSelectionPvSoutenances" formaction="{{ route('gestion.pv-soutenances.corbeille.force-destroy-groupe') }}"
-                        class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Supprimer définitivement les PV sélectionnés ? Cette action est irréversible.');">
-                    <i class="bi bi-x-circle"></i> Supprimer définitivement
-                </button>
+                @if ($peutMettreCorbeille)
+                    <button type="submit" form="formSelectionPvSoutenances" formaction="{{ route('gestion.pv-soutenances.corbeille.restaurer-groupe') }}"
+                            class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> Restaurer la sélection
+                    </button>
+                @endif
+                @if ($peutSupprimerDefinitivement)
+                    <button type="submit" form="formSelectionPvSoutenances" formaction="{{ route('gestion.pv-soutenances.corbeille.force-destroy-groupe') }}"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Supprimer définitivement les PV sélectionnés ? Cette action est irréversible.');">
+                        <i class="bi bi-x-circle"></i> Supprimer définitivement
+                    </button>
+                @endif
             @endif
         </div>
     </div>
@@ -302,7 +314,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                     @endif
-                                    @if (\App\Support\ResourceAccess::can('pv_soutenances', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.pv-soutenances.destroy', $item->id) }}" class="d-inline"
                                               onsubmit="return confirm('Mettre ce PV de soutenance à la corbeille ?');">
                                             @csrf
@@ -313,13 +325,16 @@
                                         </form>
                                     @endif
                                 @else
-                                    @if (\App\Support\ResourceAccess::can('pv_soutenances', 'delete'))
+                                    @if ($peutMettreCorbeille)
                                         <form method="POST" action="{{ route('gestion.pv-soutenances.restore', $item->id) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-outline-success" title="Restaurer">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
                                         </form>
+                                    @endif
+
+                                    @if ($peutSupprimerDefinitivement)
                                         <form method="POST" action="{{ route('gestion.pv-soutenances.force-destroy', $item->id) }}" class="d-inline"
                                               onsubmit="return confirm('Supprimer définitivement ? Cette action est irréversible.');">
                                             @csrf

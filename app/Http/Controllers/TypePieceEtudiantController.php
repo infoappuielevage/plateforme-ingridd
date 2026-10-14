@@ -137,7 +137,7 @@ class TypePieceEtudiantController extends Controller
 
     public function forceDestroy(int $id): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_pieces_etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_pieces_etudiants', 'delete_definitif'), 403);
 
         TypePieceEtudiant::onlyTrashed()->findOrFail($id)->forceDelete();
 
@@ -153,7 +153,7 @@ class TypePieceEtudiantController extends Controller
      */
     public function viderCorbeille(): RedirectResponse
     {
-        abort_unless(ResourceAccess::can('types_pieces_etudiants', 'delete'), 403);
+        abort_unless(ResourceAccess::can('types_pieces_etudiants', 'delete_definitif'), 403);
 
         $types = TypePieceEtudiant::onlyTrashed()->get();
 

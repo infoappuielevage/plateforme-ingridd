@@ -404,6 +404,17 @@ class CreerSauvegarde extends Command
         }
     }
 
+    /**
+     * `! str_starts_with($chemin, 'projet-')` : depuis l'ajout de la
+     * sauvegarde du PROJET (voir App\Console\Commands\CreerSauvegardeProjet,
+     * déposée sur ce même disque sous ce préfixe), cette purge ne doit
+     * jamais compter ni supprimer les archives de l'autre commande — sinon
+     * une rafale de sauvegardes du projet (potentiellement plus fréquentes)
+     * pourrait expulser trop tôt des sauvegardes de données, bien plus
+     * critiques à conserver. Les noms antérieurs à cet ajout (qui ne suivent
+     * aucune convention de préfixe particulière) restent, eux, comptés comme
+     * avant : seul le nouveau préfixe "projet-" est explicitement exclu.
+     */
     protected function purgerAnciennes(int $nombreAConserver): void
     {
         if ($nombreAConserver <= 0) {
@@ -412,6 +423,7 @@ class CreerSauvegarde extends Command
 
         $fichiers = collect(Storage::disk('sauvegardes')->files())
             ->filter(fn (string $chemin) => str_ends_with($chemin, '.zip'))
+            ->filter(fn (string $chemin) => ! str_starts_with($chemin, 'projet-'))
             ->sortByDesc(fn (string $chemin) => Storage::disk('sauvegardes')->lastModified($chemin))
             ->values();
 
