@@ -253,6 +253,7 @@ class ReunionController extends Controller
         abort_unless(ResourceAccess::can('reunions', 'delete'), 403);
 
         $reunion->delete();
+        $this->mettreFichiersALaCorbeille($reunion);
 
         return redirect()->route('gestion.reunions.index')->with('succes', 'Réunion mise à la corbeille.');
     }
@@ -261,9 +262,62 @@ class ReunionController extends Controller
     {
         abort_unless(ResourceAccess::can('reunions', 'delete'), 403);
 
-        Reunion::onlyTrashed()->findOrFail($reunion)->restore();
+        $reunionTrouvee = Reunion::onlyTrashed()->findOrFail($reunion);
+        $reunionTrouvee->restore();
+        $this->restaurerFichiers($reunionTrouvee);
 
         return back()->with('succes', 'Réunion restaurée.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : signalé parce qu'auparavant, seule la suppression
+     * DÉFINITIVE (voir forceDestroy()/viderCorbeille()) mettait les
+     * documents attachés à la corbeille ; les mettre simplement à la
+     * corbeille (cette méthode) laissait leurs documents actifs, visibles
+     * dans resources/views/gestion/documents/index.blade.php, alors que la
+     * réunion qui les référence avait déjà disparu de la sienne. Désormais
+     * les deux étapes (corbeille ET suppression définitive) sont
+     * cohérentes : un document suit son parent dès sa mise à la corbeille.
+     *
+     * Ignore un document déjà à la corbeille (`! trashed()`) : le
+     * resoumettre à delete() avancerait inutilement sa date de mise à la
+     * corbeille — pertinent s'il a été corbeillé indépendamment avant la
+     * réunion elle-même.
+     */
+    protected function mettreFichiersALaCorbeille(Reunion $reunion): void
+    {
+        $reunion->loadMissing('fichiers');
+
+        foreach ($reunion->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /**
+     * Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille()
+     * ci-dessus — pour que "Restaurer" une réunion restaure aussi ses
+     * documents, cohérent avec le fait qu'ils l'avaient suivie à la
+     * corbeille. Cas limite accepté (même simplicité que le reste de cette
+     * cascade) : un document corbeillé INDÉPENDAMMENT avant la réunion
+     * serait, lui aussi, restauré avec elle.
+     */
+    protected function restaurerFichiers(Reunion $reunion): void
+    {
+        $reunion->loadMissing('fichiers');
+
+        foreach ($reunion->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /**
@@ -317,6 +371,33 @@ class ReunionController extends Controller
     }
 
     /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique, voir Administration > Paramètres
+     * > Corbeilles) : MÊME cascade (documents attachés soft-supprimés),
+     * limitée aux réunions mises à la corbeille depuis plus de $jours jours.
+     * Appelée depuis la console (aucun utilisateur authentifié) — sans
+     * abort_unless(ResourceAccess::...) ni redirection, juste un compteur.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $reunions = Reunion::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($reunions as $reunion) {
+            foreach ($reunion->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $reunion->forceDelete();
+        }
+
+        return ['supprimes' => $reunions->count(), 'ignores' => 0];
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de réunions (cases à
      * cocher, voir resources/views/gestion/reunions/index.blade.php) mises à
      * la corbeille en une seule action — MÊME PRINCIPE que
@@ -333,10 +414,11 @@ class ReunionController extends Controller
             'reunions.*' => ['integer'],
         ]);
 
-        $reunions = Reunion::query()->whereIn('id', $donnees['reunions'])->get();
+        $reunions = Reunion::query()->with('fichiers')->whereIn('id', $donnees['reunions'])->get();
 
         foreach ($reunions as $reunion) {
             $reunion->delete();
+            $this->mettreFichiersALaCorbeille($reunion);
         }
 
         return back()->with('succes', $reunions->count().' réunion(s) mise(s) à la corbeille.');
@@ -352,10 +434,11 @@ class ReunionController extends Controller
             'reunions.*' => ['integer'],
         ]);
 
-        $reunions = Reunion::onlyTrashed()->whereIn('id', $donnees['reunions'])->get();
+        $reunions = Reunion::onlyTrashed()->with('fichiers')->whereIn('id', $donnees['reunions'])->get();
 
         foreach ($reunions as $reunion) {
             $reunion->restore();
+            $this->restaurerFichiers($reunion);
         }
 
         return back()->with('succes', $reunions->count().' réunion(s) restaurée(s).');

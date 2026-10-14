@@ -455,6 +455,7 @@ class EtudiantController extends Controller
         abort_unless(ResourceAccess::can('etudiants', 'delete'), 403);
 
         $etudiant->delete();
+        $this->mettreFichiersALaCorbeille($etudiant);
 
         return redirect()->route('gestion.etudiants.index')->with('succes', 'Dossier étudiant mis à la corbeille.');
     }
@@ -463,9 +464,45 @@ class EtudiantController extends Controller
     {
         abort_unless(ResourceAccess::can('etudiants', 'delete'), 403);
 
-        Etudiant::onlyTrashed()->findOrFail($etudiant)->restore();
+        $etudiantTrouve = Etudiant::onlyTrashed()->findOrFail($etudiant);
+        $etudiantTrouve->restore();
+        $this->restaurerFichiers($etudiantTrouve);
 
         return back()->with('succes', 'Dossier étudiant restauré.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(Etudiant $etudiant): void
+    {
+        $etudiant->loadMissing('fichiers');
+
+        foreach ($etudiant->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(Etudiant $etudiant): void
+    {
+        $etudiant->loadMissing('fichiers');
+
+        foreach ($etudiant->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /**
@@ -519,6 +556,32 @@ class EtudiantController extends Controller
     }
 
     /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, limitée aux
+     * dossiers mis à la corbeille depuis plus de $jours jours. Appelée
+     * depuis la console (aucun utilisateur authentifié) — sans
+     * abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $etudiants = Etudiant::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($etudiants as $etudiant) {
+            foreach ($etudiant->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $etudiant->forceDelete();
+        }
+
+        return ['supprimes' => $etudiants->count(), 'ignores' => 0];
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de dossiers étudiant
      * (cases à cocher, voir resources/views/gestion/etudiants/index.blade.php)
      * mis à la corbeille en une seule action — MÊME PRINCIPE que
@@ -539,10 +602,11 @@ class EtudiantController extends Controller
             'etudiants.*' => ['integer'],
         ]);
 
-        $etudiants = Etudiant::query()->whereIn('id', $donnees['etudiants'])->get();
+        $etudiants = Etudiant::query()->with('fichiers')->whereIn('id', $donnees['etudiants'])->get();
 
         foreach ($etudiants as $etudiant) {
             $etudiant->delete();
+            $this->mettreFichiersALaCorbeille($etudiant);
         }
 
         return back()->with('succes', $etudiants->count().' dossier(s) étudiant mis à la corbeille.');
@@ -558,10 +622,11 @@ class EtudiantController extends Controller
             'etudiants.*' => ['integer'],
         ]);
 
-        $etudiants = Etudiant::onlyTrashed()->whereIn('id', $donnees['etudiants'])->get();
+        $etudiants = Etudiant::onlyTrashed()->with('fichiers')->whereIn('id', $donnees['etudiants'])->get();
 
         foreach ($etudiants as $etudiant) {
             $etudiant->restore();
+            $this->restaurerFichiers($etudiant);
         }
 
         return back()->with('succes', $etudiants->count().' dossier(s) étudiant restauré(s).');

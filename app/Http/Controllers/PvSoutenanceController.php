@@ -621,6 +621,7 @@ class PvSoutenanceController extends Controller
         abort_unless(ResourceAccess::can('pv_soutenances', 'delete'), 403);
 
         $pvSoutenance->delete();
+        $this->mettreFichiersALaCorbeille($pvSoutenance);
 
         return redirect()->route('gestion.pv-soutenances.index')->with('succes', 'PV de soutenance mis à la corbeille.');
     }
@@ -629,9 +630,45 @@ class PvSoutenanceController extends Controller
     {
         abort_unless(ResourceAccess::can('pv_soutenances', 'delete'), 403);
 
-        PvSoutenance::onlyTrashed()->findOrFail($pvSoutenance)->restore();
+        $pvSoutenanceTrouve = PvSoutenance::onlyTrashed()->findOrFail($pvSoutenance);
+        $pvSoutenanceTrouve->restore();
+        $this->restaurerFichiers($pvSoutenanceTrouve);
 
         return back()->with('succes', 'PV de soutenance restauré.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(PvSoutenance $pvSoutenance): void
+    {
+        $pvSoutenance->loadMissing('fichiers');
+
+        foreach ($pvSoutenance->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(PvSoutenance $pvSoutenance): void
+    {
+        $pvSoutenance->loadMissing('fichiers');
+
+        foreach ($pvSoutenance->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /**
@@ -684,6 +721,32 @@ class PvSoutenanceController extends Controller
     }
 
     /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, limitée aux PV
+     * mis à la corbeille depuis plus de $jours jours. Appelée depuis la
+     * console (aucun utilisateur authentifié) — sans abort_unless ni
+     * redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $pvSoutenances = PvSoutenance::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($pvSoutenances as $pvSoutenance) {
+            foreach ($pvSoutenance->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $pvSoutenance->forceDelete();
+        }
+
+        return ['supprimes' => $pvSoutenances->count(), 'ignores' => 0];
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de PV (cases à
      * cocher, voir resources/views/gestion/pv-soutenances/index.blade.php)
      * mis à la corbeille en une seule action — MÊME PRINCIPE que
@@ -700,10 +763,11 @@ class PvSoutenanceController extends Controller
             'pvSoutenances.*' => ['integer'],
         ]);
 
-        $pvSoutenances = PvSoutenance::query()->whereIn('id', $donnees['pvSoutenances'])->get();
+        $pvSoutenances = PvSoutenance::query()->with('fichiers')->whereIn('id', $donnees['pvSoutenances'])->get();
 
         foreach ($pvSoutenances as $pvSoutenance) {
             $pvSoutenance->delete();
+            $this->mettreFichiersALaCorbeille($pvSoutenance);
         }
 
         return back()->with('succes', $pvSoutenances->count().' PV de soutenance mis à la corbeille.');
@@ -719,10 +783,11 @@ class PvSoutenanceController extends Controller
             'pvSoutenances.*' => ['integer'],
         ]);
 
-        $pvSoutenances = PvSoutenance::onlyTrashed()->whereIn('id', $donnees['pvSoutenances'])->get();
+        $pvSoutenances = PvSoutenance::onlyTrashed()->with('fichiers')->whereIn('id', $donnees['pvSoutenances'])->get();
 
         foreach ($pvSoutenances as $pvSoutenance) {
             $pvSoutenance->restore();
+            $this->restaurerFichiers($pvSoutenance);
         }
 
         return back()->with('succes', $pvSoutenances->count().' PV de soutenance restauré(s).');

@@ -352,6 +352,30 @@ class DocumentController extends Controller
     }
 
     /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique, voir Administration > Paramètres
+     * > Corbeilles) : MÊME garde-fou (jamais un document verrouillé), mais
+     * limité aux documents mis à la corbeille depuis plus de $jours jours,
+     * et appelée depuis la console (aucun utilisateur authentifié) — donc
+     * sans abort_unless(ResourceAccess::...) ni redirection, juste des
+     * compteurs.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        [$documents, $ignores] = $this->separerVerrouilles(
+            Document::onlyTrashed()->where('deleted_at', '<', now()->subDays($jours))->get()
+        );
+
+        foreach ($documents as $document) {
+            $document->forceDelete();
+        }
+
+        return ['supprimes' => $documents->count(), 'ignores' => $ignores];
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de documents (cases à
      * cocher, voir resources/views/gestion/documents/index.blade.php) mis à
      * la corbeille en une seule action, plutôt qu'un par un — sur demande

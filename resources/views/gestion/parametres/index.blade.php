@@ -164,6 +164,43 @@
                 </form>
             @break
 
+            @case('corbeille')
+                <form method="POST" action="{{ route('gestion.parametres.update', ['section' => 'corbeille']) }}">
+                    @csrf
+                    @method('PUT')
+
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header header-danger d-flex align-items-center gap-2"><i class="bi bi-trash3-fill"></i> Corbeilles (purge automatique)</div>
+                        <div class="card-body">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                Une fois purgé automatiquement, un élément de la corbeille (document, contrat,
+                                réunion, étudiant...) est supprimé <strong>définitivement</strong> — exactement comme
+                                le bouton « Vider la corbeille » sur chaque écran, mais déclenché chaque jour sans
+                                intervention. Laissez le champ ci-dessous <strong>vide</strong> pour ne jamais purger
+                                automatiquement — c'est le réglage par défaut, et la mise à la corbeille reste alors
+                                sans limite de durée tant que personne ne vide la corbeille manuellement.
+                            </div>
+                            <label class="form-label">Purger automatiquement après</label>
+                            <div class="input-group" style="max-width: 260px;">
+                                <input type="number" name="purge_corbeille_jours" class="form-control" min="7"
+                                       value="{{ old('purge_corbeille_jours', $parametres->purge_corbeille_jours) }}" placeholder="désactivée">
+                                <span class="input-group-text">jours</span>
+                            </div>
+                            <div class="form-text">
+                                Les éléments de la corbeille mis à la corbeille depuis plus longtemps que cette durée
+                                sont supprimés définitivement chaque jour, catégorie par catégorie — un référentiel
+                                (type de contrat, filière...) encore utilisé par un élément actif n'est jamais purgé,
+                                même après l'échéance. Voir <a href="{{ route('gestion.corbeilles.index') }}">Corbeilles</a>
+                                pour vider manuellement sans attendre.
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Enregistrer</button>
+                </form>
+            @break
+
             @case('verrouillage')
                 {{--
                     Demande explicite du client ("améliore-la, de part ses

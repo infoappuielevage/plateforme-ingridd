@@ -845,6 +845,44 @@ class PvSoutenanceControllerTest extends TestCase
         $this->assertNull($pvHorsSelection->fresh()->deleted_at);
     }
 
+    /**
+     * Cascade MISE À LA CORBEILLE, variante GROUPÉE — demande explicite du
+     * client ("cascade incohérente") : voir le docblock de
+     * PvSoutenanceController::mettreFichiersALaCorbeille(). Couvre le
+     * chemin de code propre à la sélection multiple (mettreCorbeilleGroupee()),
+     * distinct de celui déjà testé pour un seul PV (voir
+     * ReunionControllerTest::test_mise_a_la_corbeille_dune_reunion_met_aussi_son_document_a_la_corbeille()
+     * pour le cas unitaire).
+     */
+    public function test_mise_a_la_corbeille_groupee_met_aussi_les_documents_a_la_corbeille(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $pvA = PvSoutenance::factory()->create();
+        $documentA = Document::factory()->create();
+        PvSoutenanceFichier::factory()->create(['pv_soutenance_id' => $pvA->id, 'document_id' => $documentA->id]);
+
+        $pvB = PvSoutenance::factory()->create();
+
+        $this->actingAs($admin)
+            ->post(route('gestion.pv-soutenances.corbeille-groupee'), [
+                'pvSoutenances' => [$pvA->id, $pvB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNotNull($pvA->fresh()->deleted_at);
+        $this->assertNotNull(Document::onlyTrashed()->find($documentA->id));
+
+        $this->actingAs($admin)
+            ->post(route('gestion.pv-soutenances.corbeille.restaurer-groupe'), [
+                'pvSoutenances' => [$pvA->id, $pvB->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($pvA->fresh()->deleted_at);
+        $this->assertNull(Document::onlyTrashed()->find($documentA->id));
+    }
+
     public function test_restauration_groupee(): void
     {
         $admin = User::factory()->admin()->create();

@@ -251,6 +251,7 @@ class SessionReleveController extends Controller
         abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
 
         $sessionReleve->delete();
+        $this->mettreFichiersALaCorbeille($sessionReleve);
 
         return redirect()->route('gestion.sessions-releves.index')->with('succes', 'Session de relevé mise à la corbeille.');
     }
@@ -259,9 +260,45 @@ class SessionReleveController extends Controller
     {
         abort_unless(ResourceAccess::can('sessions_releves', 'delete'), 403);
 
-        SessionReleve::onlyTrashed()->findOrFail($sessionReleve)->restore();
+        $sessionTrouvee = SessionReleve::onlyTrashed()->findOrFail($sessionReleve);
+        $sessionTrouvee->restore();
+        $this->restaurerFichiers($sessionTrouvee);
 
         return back()->with('succes', 'Session de relevé restaurée.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(SessionReleve $sessionReleve): void
+    {
+        $sessionReleve->loadMissing('fichiers');
+
+        foreach ($sessionReleve->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(SessionReleve $sessionReleve): void
+    {
+        $sessionReleve->loadMissing('fichiers');
+
+        foreach ($sessionReleve->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     public function forceDestroy(int $sessionReleve): RedirectResponse
@@ -310,6 +347,32 @@ class SessionReleveController extends Controller
     }
 
     /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, limitée aux
+     * sessions mises à la corbeille depuis plus de $jours jours. Appelée
+     * depuis la console (aucun utilisateur authentifié) — sans
+     * abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $sessions = SessionReleve::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($sessions as $session) {
+            foreach ($session->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $session->forceDelete();
+        }
+
+        return ['supprimes' => $sessions->count(), 'ignores' => 0];
+    }
+
+    /**
      * Mise à la corbeille groupée : sélection multiple de sessions (cases à
      * cocher, voir resources/views/gestion/sessions-releves/index.blade.php)
      * mises à la corbeille en une seule action — MÊME PRINCIPE que
@@ -326,10 +389,11 @@ class SessionReleveController extends Controller
             'sessions.*' => ['integer'],
         ]);
 
-        $sessions = SessionReleve::query()->whereIn('id', $donnees['sessions'])->get();
+        $sessions = SessionReleve::query()->with('fichiers')->whereIn('id', $donnees['sessions'])->get();
 
         foreach ($sessions as $session) {
             $session->delete();
+            $this->mettreFichiersALaCorbeille($session);
         }
 
         return back()->with('succes', $sessions->count().' session(s) de relevé mise(s) à la corbeille.');
@@ -345,10 +409,11 @@ class SessionReleveController extends Controller
             'sessions.*' => ['integer'],
         ]);
 
-        $sessions = SessionReleve::onlyTrashed()->whereIn('id', $donnees['sessions'])->get();
+        $sessions = SessionReleve::onlyTrashed()->with('fichiers')->whereIn('id', $donnees['sessions'])->get();
 
         foreach ($sessions as $session) {
             $session->restore();
+            $this->restaurerFichiers($session);
         }
 
         return back()->with('succes', $sessions->count().' session(s) de relevé restaurée(s).');

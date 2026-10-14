@@ -199,6 +199,25 @@ class ChampSupplementaireController extends Controller
         return back()->with('succes', $champs->count().' champ(s) supplémentaire(s) supprimé(s) définitivement.');
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : limitée aux champs mis à la
+     * corbeille depuis plus de $jours jours. Appelée depuis la console
+     * (aucun utilisateur authentifié) — sans abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $champs = ChampSupplementaire::onlyTrashed()->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($champs as $champ) {
+            $champ->forceDelete();
+        }
+
+        return ['supprimes' => $champs->count(), 'ignores' => 0];
+    }
+
     protected function valider(Request $request): array
     {
         $donnees = $request->validate([

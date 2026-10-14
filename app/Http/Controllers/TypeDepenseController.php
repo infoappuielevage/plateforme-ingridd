@@ -188,6 +188,30 @@ class TypeDepenseController extends Controller
         return back()->with('succes', $types->count().' catégorie(s) de dépense supprimée(s) définitivement.');
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade (dépenses
+     * rattachées), limitée aux catégories mises à la corbeille depuis plus
+     * de $jours jours. Appelée depuis la console (aucun utilisateur
+     * authentifié) — sans abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $types = TypeDepense::onlyTrashed()->with('depenses')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($types as $type) {
+            foreach ($type->depenses as $depense) {
+                $depense->forceDelete();
+            }
+
+            $type->forceDelete();
+        }
+
+        return ['supprimes' => $types->count(), 'ignores' => 0];
+    }
+
     /** @return array<string, mixed> */
     protected function valider(Request $request, ?TypeDepense $type): array
     {

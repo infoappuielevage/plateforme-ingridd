@@ -53,3 +53,22 @@ Schedule::command('ingridd:sauvegarde')
 | tableau de bord de l'administrateur, pour ne pas dépendre d'y penser.
 */
 Schedule::command('ingridd:verifier-alertes')->daily();
+
+/*
+|--------------------------------------------------------------------------
+| Purge automatique de la corbeille
+|--------------------------------------------------------------------------
+|
+| Voir App\Console\Commands\PurgerCorbeilles — supprime définitivement les
+| éléments de la corbeille (tous écrans confondus) plus anciens que le
+| nombre de jours réglé dans Administration > Paramètres > Corbeilles (voir
+| App\Models\Parametre::$purge_corbeille_jours). DÉSACTIVÉE PAR DÉFAUT
+| (réglage vide) : le ->when() ci-dessous évite même de lancer la commande
+| tant que l'administrateur n'a pas explicitement renseigné un nombre de
+| jours — même principe que ->when(doitSauvegarderAujourdhui()) ci-dessus,
+| mais ici pour ne jamais déclencher une suppression définitive par défaut
+| plutôt que pour choisir une fréquence.
+*/
+Schedule::command('ingridd:purger-corbeilles')
+    ->daily()
+    ->when(fn () => \App\Models\Parametre::actuel()->purge_corbeille_jours !== null);

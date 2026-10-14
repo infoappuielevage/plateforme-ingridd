@@ -161,6 +161,7 @@ class RecetteDossierController extends Controller
         abort_if($dossier->type !== self::TYPES_URL[$type], 404);
 
         $dossier->delete();
+        $this->mettreFichiersALaCorbeille($dossier);
 
         return redirect()->route('gestion.recettes.dossiers.index', ['type' => $type])->with('succes', 'Dossier mis à la corbeille.');
     }
@@ -174,8 +175,43 @@ class RecetteDossierController extends Controller
         abort_if($trouve->type !== $typeInterne, 404);
 
         $trouve->restore();
+        $this->restaurerFichiers($trouve);
 
         return back()->with('succes', 'Dossier restauré.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(RecetteDossier $dossier): void
+    {
+        $dossier->loadMissing('fichiers');
+
+        foreach ($dossier->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(RecetteDossier $dossier): void
+    {
+        $dossier->loadMissing('fichiers');
+
+        foreach ($dossier->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /** Suppression définitive : met aussi à la corbeille chaque document encore attaché, même raisonnement que les autres écrans dédiés. */
@@ -224,6 +260,34 @@ class RecetteDossierController extends Controller
         return redirect()
             ->route('gestion.recettes.dossiers.index', ['type' => $type, 'corbeille' => 1])
             ->with('succes', $dossiers->count().' dossier(s) supprimé(s) définitivement.');
+    }
+
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, mais TOUS les
+     * types confondus (pas scopé par $type — la purge automatique traite
+     * l'intégralité de la corbeille, contrairement au bouton "Vider la
+     * corbeille" propre à chaque sous-écran), limitée aux dossiers mis à la
+     * corbeille depuis plus de $jours jours. Appelée depuis la console
+     * (aucun utilisateur authentifié) — sans abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $dossiers = RecetteDossier::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($dossiers as $dossier) {
+            foreach ($dossier->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $dossier->forceDelete();
+        }
+
+        return ['supprimes' => $dossiers->count(), 'ignores' => 0];
     }
 
     /** Ajoute UN NOUVEAU fichier à la liste (en nombre libre, voir le docblock de la classe). */

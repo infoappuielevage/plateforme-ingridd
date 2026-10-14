@@ -43,6 +43,10 @@ class Parametre extends Model
         'taille_max_document_mo',
         'taille_max_avatar_mo',
         'retention_audit_jours',
+        // Voir App\Console\Commands\PurgerCorbeilles — nullable, jamais dans
+        // VALEURS_PAR_DEFAUT ci-dessous (voir le docblock de la migration
+        // qui l'ajoute) : NULL = purge automatique désactivée.
+        'purge_corbeille_jours',
         'retention_sauvegardes_nombre',
         'mysqldump_chemin',
         'frequence_sauvegarde_auto',
@@ -68,6 +72,7 @@ class Parametre extends Model
             'taille_max_document_mo' => 'integer',
             'taille_max_avatar_mo' => 'integer',
             'retention_audit_jours' => 'integer',
+            'purge_corbeille_jours' => 'integer',
             'retention_sauvegardes_nombre' => 'integer',
             'types_fichiers_autorises' => 'array',
             'nombre_annees_these_doctorat' => 'integer',

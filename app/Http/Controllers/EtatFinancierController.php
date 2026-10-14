@@ -143,6 +143,7 @@ class EtatFinancierController extends Controller
         abort_unless(ResourceAccess::can('etats_financiers', 'delete'), 403);
 
         $etatFinancier->delete();
+        $this->mettreDocumentALaCorbeille($etatFinancier);
 
         return redirect()->route('gestion.etats-financiers.index')->with('succes', 'État financier mis à la corbeille.');
     }
@@ -151,9 +152,38 @@ class EtatFinancierController extends Controller
     {
         abort_unless(ResourceAccess::can('etats_financiers', 'delete'), 403);
 
-        EtatFinancier::onlyTrashed()->findOrFail($etatFinancier)->restore();
+        $etatFinancierTrouve = EtatFinancier::onlyTrashed()->findOrFail($etatFinancier);
+        $etatFinancierTrouve->restore();
+        $this->restaurerDocument($etatFinancierTrouve);
 
         return back()->with('succes', 'État financier restauré.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController::
+     * mettreFichiersALaCorbeille() pour le détail du problème signalé).
+     * Pas de relation `fichiers` ici (voir purgerAnciennes() ci-dessus) :
+     * document_id directement sur l'état financier lui-même.
+     */
+    protected function mettreDocumentALaCorbeille(EtatFinancier $etatFinancier): void
+    {
+        if (! $etatFinancier->document_id) {
+            return;
+        }
+
+        $document = Document::query()->find($etatFinancier->document_id);
+        if ($document && ! $document->trashed()) {
+            $document->delete();
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreDocumentALaCorbeille() ci-dessus. */
+    protected function restaurerDocument(EtatFinancier $etatFinancier): void
+    {
+        if ($etatFinancier->document_id) {
+            Document::onlyTrashed()->find($etatFinancier->document_id)?->restore();
+        }
     }
 
     /** Suppression définitive : met aussi le document attaché à la corbeille, même raisonnement que les autres écrans dédiés. */
@@ -196,6 +226,30 @@ class EtatFinancierController extends Controller
             ->with('succes', $etatsFinanciers->count().' état(s) financier(s) supprimé(s) définitivement.');
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade (document_id
+     * direct, pas de relation `fichiers`), limitée aux états financiers mis
+     * à la corbeille depuis plus de $jours jours. Appelée depuis la console
+     * (aucun utilisateur authentifié) — sans abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $etatsFinanciers = EtatFinancier::onlyTrashed()->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($etatsFinanciers as $etatFinancier) {
+            if ($etatFinancier->document_id) {
+                Document::query()->find($etatFinancier->document_id)?->delete();
+            }
+
+            $etatFinancier->forceDelete();
+        }
+
+        return ['supprimes' => $etatsFinanciers->count(), 'ignores' => 0];
+    }
+
     /** Mise à la corbeille groupée — même principe que les autres écrans dédiés (sélection multiple, voir index.blade.php). */
     public function mettreCorbeilleGroupee(Request $request): RedirectResponse
     {
@@ -210,6 +264,7 @@ class EtatFinancierController extends Controller
 
         foreach ($etatsFinanciers as $etatFinancier) {
             $etatFinancier->delete();
+            $this->mettreDocumentALaCorbeille($etatFinancier);
         }
 
         return back()->with('succes', $etatsFinanciers->count().' état(s) financier(s) mis à la corbeille.');
@@ -229,6 +284,7 @@ class EtatFinancierController extends Controller
 
         foreach ($etatsFinanciers as $etatFinancier) {
             $etatFinancier->restore();
+            $this->restaurerDocument($etatFinancier);
         }
 
         return back()->with('succes', $etatsFinanciers->count().' état(s) financier(s) restauré(s).');

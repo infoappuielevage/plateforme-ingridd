@@ -325,6 +325,39 @@ class ReunionControllerTest extends TestCase
         $this->assertNull($reunion->fresh()->deleted_at);
     }
 
+    /**
+     * Cascade MISE À LA CORBEILLE / RESTAURATION — demande explicite du
+     * client ("cascade incohérente") : voir le docblock de
+     * ReunionController::mettreFichiersALaCorbeille(). Avant ce correctif,
+     * seule la suppression DÉFINITIVE emportait les documents attachés ;
+     * la simple mise à la corbeille les laissait actifs.
+     */
+    public function test_mise_a_la_corbeille_dune_reunion_met_aussi_son_document_a_la_corbeille(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reunion = Reunion::factory()->create();
+        $document = Document::factory()->create();
+        ReunionFichier::factory()->create([
+            'reunion_id' => $reunion->id,
+            'role' => ReunionFichier::ROLE_RAPPORT,
+            'document_id' => $document->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->delete(route('gestion.reunions.destroy', $reunion->id))
+            ->assertRedirect();
+
+        $this->assertNotNull($reunion->fresh()->deleted_at);
+        $this->assertNotNull(Document::onlyTrashed()->find($document->id));
+
+        $this->actingAs($admin)
+            ->post(route('gestion.reunions.restore', $reunion->id))
+            ->assertRedirect();
+
+        $this->assertNull($reunion->fresh()->deleted_at);
+        $this->assertNull(Document::onlyTrashed()->find($document->id));
+    }
+
     /** La suppression définitive emporte aussi (à la corbeille) les documents encore attachés (rapport + pièces jointes). */
     public function test_suppression_definitive_met_les_documents_encore_attaches_a_la_corbeille(): void
     {

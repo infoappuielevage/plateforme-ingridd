@@ -131,6 +131,7 @@ class ListeFinanceEtudiantController extends Controller
         abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete'), 403);
 
         $listeFinanceEtudiant->delete(); // $listeFinanceEtudiant lié par liaison de modèle implicite (non corbeillé à ce stade)
+        $this->mettreFichiersALaCorbeille($listeFinanceEtudiant);
 
         return redirect()->route('gestion.listes-finances-etudiants.index')->with('succes', 'Liste mise à la corbeille.');
     }
@@ -139,9 +140,45 @@ class ListeFinanceEtudiantController extends Controller
     {
         abort_unless(ResourceAccess::can('listes_finances_etudiants', 'delete'), 403);
 
-        ListeFinanceEtudiant::onlyTrashed()->findOrFail($listeFinanceEtudiant)->restore();
+        $listeTrouvee = ListeFinanceEtudiant::onlyTrashed()->findOrFail($listeFinanceEtudiant);
+        $listeTrouvee->restore();
+        $this->restaurerFichiers($listeTrouvee);
 
         return back()->with('succes', 'Liste restaurée.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(ListeFinanceEtudiant $listeFinanceEtudiant): void
+    {
+        $listeFinanceEtudiant->loadMissing('fichiers');
+
+        foreach ($listeFinanceEtudiant->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(ListeFinanceEtudiant $listeFinanceEtudiant): void
+    {
+        $listeFinanceEtudiant->loadMissing('fichiers');
+
+        foreach ($listeFinanceEtudiant->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /** Suppression définitive : met aussi à la corbeille chaque document encore attaché, même raisonnement que les autres écrans dédiés. */
@@ -186,6 +223,32 @@ class ListeFinanceEtudiantController extends Controller
         return redirect()
             ->route('gestion.listes-finances-etudiants.index', ['corbeille' => 1])
             ->with('succes', $listes->count().' liste(s) supprimée(s) définitivement.');
+    }
+
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, limitée aux
+     * listes mises à la corbeille depuis plus de $jours jours. Appelée
+     * depuis la console (aucun utilisateur authentifié) — sans
+     * abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $listes = ListeFinanceEtudiant::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($listes as $liste) {
+            foreach ($liste->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $liste->forceDelete();
+        }
+
+        return ['supprimes' => $listes->count(), 'ignores' => 0];
     }
 
     /** Ajoute UN NOUVEAU fichier à la liste (en nombre libre, voir le docblock de la classe). */

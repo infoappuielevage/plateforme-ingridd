@@ -152,6 +152,7 @@ class RecetteScolariteController extends Controller
         abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
 
         $recetteScolarite->delete();
+        $this->mettreFichiersALaCorbeille($recetteScolarite);
 
         return redirect()->route('gestion.recettes.scolarite.index')->with('succes', 'Dossier Scolarité mis à la corbeille.');
     }
@@ -160,9 +161,45 @@ class RecetteScolariteController extends Controller
     {
         abort_unless(ResourceAccess::can('recettes', 'delete'), 403);
 
-        RecetteScolarite::onlyTrashed()->findOrFail($recetteScolarite)->restore();
+        $dossierTrouve = RecetteScolarite::onlyTrashed()->findOrFail($recetteScolarite);
+        $dossierTrouve->restore();
+        $this->restaurerFichiers($dossierTrouve);
 
         return back()->with('succes', 'Dossier Scolarité restauré.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(RecetteScolarite $recetteScolarite): void
+    {
+        $recetteScolarite->loadMissing('fichiers');
+
+        foreach ($recetteScolarite->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(RecetteScolarite $recetteScolarite): void
+    {
+        $recetteScolarite->loadMissing('fichiers');
+
+        foreach ($recetteScolarite->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /** Suppression définitive : met aussi à la corbeille chaque document encore attaché à une case, même raisonnement que les autres écrans dédiés. */
@@ -207,6 +244,32 @@ class RecetteScolariteController extends Controller
         return redirect()
             ->route('gestion.recettes.scolarite.index', ['corbeille' => 1])
             ->with('succes', $dossiers->count().' dossier(s) Scolarité supprimé(s) définitivement.');
+    }
+
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, limitée aux
+     * dossiers mis à la corbeille depuis plus de $jours jours. Appelée
+     * depuis la console (aucun utilisateur authentifié) — sans
+     * abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $dossiers = RecetteScolarite::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($dossiers as $dossier) {
+            foreach ($dossier->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $dossier->forceDelete();
+        }
+
+        return ['supprimes' => $dossiers->count(), 'ignores' => 0];
     }
 
     /**

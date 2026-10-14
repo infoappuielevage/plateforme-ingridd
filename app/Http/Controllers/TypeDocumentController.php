@@ -206,6 +206,25 @@ class TypeDocumentController extends Controller
         return back()->with('succes', $types->count().' type(s) de document supprimé(s) définitivement.');
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : limitée aux types mis à la
+     * corbeille depuis plus de $jours jours. Appelée depuis la console
+     * (aucun utilisateur authentifié) — sans abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $types = TypeDocument::onlyTrashed()->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($types as $type) {
+            $type->forceDelete();
+        }
+
+        return ['supprimes' => $types->count(), 'ignores' => 0];
+    }
+
     protected function valider(Request $request, ?TypeDocument $type): array
     {
         $donnees = $request->validate([

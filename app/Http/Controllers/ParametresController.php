@@ -43,6 +43,7 @@ class ParametresController extends Controller
         'fichiers' => 'Fichiers & uploads',
         'doctorat' => 'Doctorat',
         'historique' => 'Historique (audit)',
+        'corbeille' => 'Corbeilles (purge automatique)',
         'verrouillage' => 'Verrouillage des documents',
         'sauvegardes' => 'Sauvegardes',
         'mail' => 'Configuration mail (SMTP)',
@@ -142,6 +143,7 @@ class ParametresController extends Controller
             'fichiers' => $this->enregistrerFichiers($request, $parametres),
             'doctorat' => $this->enregistrerDoctorat($request, $parametres),
             'historique' => $this->enregistrerHistorique($request, $parametres),
+            'corbeille' => $this->enregistrerCorbeille($request, $parametres),
             'verrouillage' => $this->enregistrerVerrouillage($request, $parametres),
             'sauvegardes' => $this->enregistrerSauvegardes($request, $parametres),
             'mail' => $this->enregistrerMail($request, $parametres),
@@ -226,6 +228,28 @@ class ParametresController extends Controller
     {
         $donnees = $request->validate([
             'retention_audit_jours' => ['required', 'integer', 'min:30'],
+        ]);
+
+        $parametres->fill($donnees)->save();
+    }
+
+    /**
+     * Purge automatique de la corbeille — demande explicite du client, voir
+     * le docblock de la migration qui ajoute `purge_corbeille_jours` et
+     * App\Console\Commands\PurgerCorbeilles. "nullable" (contrairement à
+     * `retention_audit_jours`, "required") : laisser ce champ vide
+     * DÉSACTIVE la purge automatique plutôt que de retomber sur une valeur
+     * par défaut — supprimer définitivement du contenu est irréversible,
+     * ça ne doit jamais se déclencher sans que l'administrateur ait
+     * explicitement renseigné un nombre de jours. min:7 : même ordre de
+     * grandeur que les autres délais de ce type sur cet écran, pour éviter
+     * qu'une faute de frappe (ex. "1" au lieu de "100") ne vide la
+     * corbeille de tout le monde dès le lendemain.
+     */
+    protected function enregistrerCorbeille(Request $request, Parametre $parametres): void
+    {
+        $donnees = $request->validate([
+            'purge_corbeille_jours' => ['nullable', 'integer', 'min:7'],
         ]);
 
         $parametres->fill($donnees)->save();

@@ -231,6 +231,7 @@ class ContratController extends Controller
         abort_if($contrat->type_contrat_id !== $typeContrat->id, 404);
 
         $contrat->delete();
+        $this->mettreFichiersALaCorbeille($contrat);
 
         return redirect()->route('gestion.contrats.index', ['typeContrat' => $typeContrat->code])->with('succes', 'Contrat mis à la corbeille.');
     }
@@ -243,8 +244,43 @@ class ContratController extends Controller
         abort_if($trouve->type_contrat_id !== $typeContrat->id, 404);
 
         $trouve->restore();
+        $this->restaurerFichiers($trouve);
 
         return back()->with('succes', 'Contrat restauré.');
+    }
+
+    /**
+     * Cascade MISE À LA CORBEILLE — demande explicite du client ("cascade
+     * incohérente" : voir le docblock équivalent de ReunionController pour
+     * le détail du problème signalé). Même garde-fou (document déjà à la
+     * corbeille ignoré).
+     */
+    protected function mettreFichiersALaCorbeille(Contrat $contrat): void
+    {
+        $contrat->loadMissing('fichiers');
+
+        foreach ($contrat->fichiers as $fichier) {
+            if (! $fichier->document_id) {
+                continue;
+            }
+
+            $document = Document::query()->find($fichier->document_id);
+            if ($document && ! $document->trashed()) {
+                $document->delete();
+            }
+        }
+    }
+
+    /** Cascade RESTAURATION, symétrique à mettreFichiersALaCorbeille() ci-dessus. */
+    protected function restaurerFichiers(Contrat $contrat): void
+    {
+        $contrat->loadMissing('fichiers');
+
+        foreach ($contrat->fichiers as $fichier) {
+            if ($fichier->document_id) {
+                Document::onlyTrashed()->find($fichier->document_id)?->restore();
+            }
+        }
     }
 
     /** Suppression définitive : supprime aussi (mise à la corbeille) chaque Document encore attaché, même raisonnement que les autres écrans dédiés. */
@@ -294,6 +330,34 @@ class ContratController extends Controller
             ->with('succes', $contrats->count().' contrat(s) supprimé(s) définitivement.');
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME cascade, mais TOUTES les
+     * catégories confondues (pas scopé par TypeContrat — la purge
+     * automatique traite l'intégralité de la corbeille), limitée aux
+     * contrats mis à la corbeille depuis plus de $jours jours. Appelée
+     * depuis la console (aucun utilisateur authentifié) — sans
+     * abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $contrats = Contrat::onlyTrashed()->with('fichiers')->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        foreach ($contrats as $contrat) {
+            foreach ($contrat->fichiers as $fichier) {
+                if ($fichier->document_id) {
+                    Document::query()->find($fichier->document_id)?->delete();
+                }
+            }
+
+            $contrat->forceDelete();
+        }
+
+        return ['supprimes' => $contrats->count(), 'ignores' => 0];
+    }
+
     /** Mise à la corbeille groupée — même principe que ReunionController::mettreCorbeilleGroupee(). */
     public function mettreCorbeilleGroupee(Request $request, TypeContrat $typeContrat): RedirectResponse
     {
@@ -304,10 +368,11 @@ class ContratController extends Controller
             'contrats.*' => ['integer'],
         ]);
 
-        $contrats = Contrat::query()->where('type_contrat_id', $typeContrat->id)->whereIn('id', $donnees['contrats'])->get();
+        $contrats = Contrat::query()->with('fichiers')->where('type_contrat_id', $typeContrat->id)->whereIn('id', $donnees['contrats'])->get();
 
         foreach ($contrats as $contrat) {
             $contrat->delete();
+            $this->mettreFichiersALaCorbeille($contrat);
         }
 
         return back()->with('succes', $contrats->count().' contrat(s) mis à la corbeille.');
@@ -322,10 +387,11 @@ class ContratController extends Controller
             'contrats.*' => ['integer'],
         ]);
 
-        $contrats = Contrat::onlyTrashed()->where('type_contrat_id', $typeContrat->id)->whereIn('id', $donnees['contrats'])->get();
+        $contrats = Contrat::onlyTrashed()->with('fichiers')->where('type_contrat_id', $typeContrat->id)->whereIn('id', $donnees['contrats'])->get();
 
         foreach ($contrats as $contrat) {
             $contrat->restore();
+            $this->restaurerFichiers($contrat);
         }
 
         return back()->with('succes', $contrats->count().' contrat(s) restauré(s).');

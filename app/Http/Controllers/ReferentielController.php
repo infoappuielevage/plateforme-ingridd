@@ -495,6 +495,39 @@ class ReferentielController extends Controller
         return back()->with('succes', $this->messageGroupe($supprimes, 'supprimé(e)(s) définitivement', $ignores));
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique, voir Administration > Paramètres
+     * > Corbeilles) : MÊME garde-fou (encoreUtilise()), limité aux éléments
+     * mis à la corbeille depuis plus de $jours jours. Appelée depuis la
+     * console (aucun utilisateur authentifié), une fois par sous-référentiel
+     * (filieres/niveaux/annees-academiques) — sans abort_unless ni
+     * redirection, juste des compteurs.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(string $referentiel, int $jours): array
+    {
+        $definition = $this->definition($referentiel);
+
+        $items = $definition['modele']::onlyTrashed()->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        $supprimes = 0;
+        $ignores = 0;
+        foreach ($items as $item) {
+            if ($this->encoreUtilise($item, $definition)) {
+                $ignores++;
+
+                continue;
+            }
+
+            $item->forceDelete();
+            $supprimes++;
+        }
+
+        return ['supprimes' => $supprimes, 'ignores' => $ignores];
+    }
+
     /** Message de retour générique des trois actions groupées ci-dessus — "élément(s)" plutôt que le mot exact du référentiel pour éviter tout problème d'accord (filière/niveau/année académique n'ont pas le même genre). */
     protected function messageGroupe(int $traites, string $action, int $ignores = 0): string
     {

@@ -176,6 +176,36 @@ class TypeContratController extends Controller
         return back()->with('succes', $message);
     }
 
+    /**
+     * Pendant de viderCorbeille() ci-dessus pour App\Console\Commands\
+     * PurgerCorbeilles (purge automatique) : MÊME garde-fou (catégorie
+     * encore utilisée par un contrat, même corbeillé, jamais purgée),
+     * limité aux catégories mises à la corbeille depuis plus de $jours
+     * jours. Appelée depuis la console (aucun utilisateur authentifié) —
+     * sans abort_unless ni redirection.
+     *
+     * @return array{supprimes: int, ignores: int}
+     */
+    public function purgerAnciennes(int $jours): array
+    {
+        $types = TypeContrat::onlyTrashed()->where('deleted_at', '<', now()->subDays($jours))->get();
+
+        $supprimes = 0;
+        $ignores = 0;
+        foreach ($types as $type) {
+            if ($type->contrats()->withTrashed()->exists()) {
+                $ignores++;
+
+                continue;
+            }
+
+            $type->forceDelete();
+            $supprimes++;
+        }
+
+        return ['supprimes' => $supprimes, 'ignores' => $ignores];
+    }
+
     /** @return array<string, mixed> */
     protected function valider(Request $request, ?TypeContrat $type): array
     {
